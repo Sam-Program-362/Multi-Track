@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Multi-Track logo">
+  <defs>
+    <linearGradient id="bg" x1="70" y1="40" x2="440" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#192967"/><stop offset=".52" stop-color="#0b1238"/><stop offset="1" stop-color="#050711"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="130" y1="100" x2="410" y2="430" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8DE8FF"/><stop offset=".5" stop-color="#8AB4FF"/><stop offset="1" stop-color="#C39BFF"/>
+    </linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="184" fill="none" stroke="#8AB4FF" stroke-opacity=".18" stroke-width="2"/>
+  <path d="M145 117h222a35 35 0 0 1 35 35v231a35 35 0 0 1-35 35H145a35 35 0 0 1-35-35V152a35 35 0 0 1 35-35Z" fill="#fff" fill-opacity=".07" stroke="url(#accent)" stroke-width="13"/>
+  <path d="M116 190h280" stroke="url(#accent)" stroke-width="13"/>
+  <path d="M179 91v57M333 91v57" stroke="#BDEFFF" stroke-width="18" stroke-linecap="round"/>
+  <circle cx="256" cy="293" r="91" fill="#07102D" stroke="url(#accent)" stroke-width="11" filter="url(#glow)"/>
+  <path d="M256 232v65l46 30" fill="none" stroke="#F3F8FF" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="256" cy="293" r="12" fill="#8DE8FF"/>
+  <circle cx="256" cy="219" r="5" fill="#8DE8FF"/><circle cx="330" cy="293" r="5" fill="#8DE8FF"/><circle cx="256" cy="367" r="5" fill="#8DE8FF"/><circle cx="182" cy="293" r="5" fill="#8DE8FF"/>
+</svg>

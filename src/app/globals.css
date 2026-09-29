@@ -288,3 +288,38 @@ select {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ------------------------------ PWA install ----------------------------- */
+.install-button {
+  position: fixed;
+  z-index: 45;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 28px);
+  padding: 9px 12px 9px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 18px;
+  color: #f3f7ff;
+  background: rgba(8, 13, 38, 0.9);
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(18px);
+  cursor: pointer;
+}
+.install-button img { width: 38px; height: 38px; border-radius: 10px; }
+.install-button span { display: grid; text-align: left; line-height: 1.2; }
+.install-button strong { font-size: 12px; }
+.install-button small { margin-top: 2px; color: #bac6dd; font-size: 9px; }
+.install-button b { margin-left: 3px; color: #8de8ff; font-size: 20px; }
+.install-overlay { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 20px; background: rgba(2, 4, 14, .72); backdrop-filter: blur(8px); }
+.install-help { width: min(100%, 380px); padding: 28px; border: 1px solid rgba(255,255,255,.2); border-radius: 28px; background: #101735; text-align: center; box-shadow: 0 28px 80px rgba(0,0,0,.5); }
+.install-help img { width: 74px; height: 74px; border-radius: 18px; }
+.install-help h2 { margin: 16px 0 8px; font-size: 22px; font-weight: 750; }
+.install-help p { color: #c4cee3; font-size: 14px; line-height: 1.6; }
+.install-help button { margin-top: 16px; padding: 10px 24px; border: 0; border-radius: 999px; color: #08102b; background: #8ab4ff; font-weight: 700; cursor: pointer; }
+
+@media (display-mode: standalone) {
+  body { padding-top: env(safe-area-inset-top); }
+}
