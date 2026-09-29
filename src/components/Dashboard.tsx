@@ -17,6 +17,7 @@ import ClockPanel from "./ClockPanel";
 import WeatherPanel from "./WeatherPanel";
 import IslamicPanel from "./IslamicPanel";
 import { Touchable } from "./ui";
+import InstallApp from "./InstallApp";
 
 const PHASE_OPTIONS: Array<DayPhase | "auto"> = [
   "auto",
@@ -203,17 +204,20 @@ export default function Dashboard({
               aria-hidden
             />
             <div className="relative flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.3em]" style={{ color: theme.muted }}>
-                  <span className="pulse-dot inline-block h-2 w-2 rounded-full" style={{ background: theme.accent }} />
-                  {theme.greeting} {theme.emoji}
+              <div className="flex items-center gap-3">
+                <img src="/logo.svg" alt="" className="h-12 w-12 rounded-[14px] shadow-lg sm:h-14 sm:w-14" />
+                <div>
+                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.3em]" style={{ color: theme.muted }}>
+                    <span className="pulse-dot inline-block h-2 w-2 rounded-full" style={{ background: theme.accent }} />
+                    {theme.greeting} {theme.emoji}
+                  </div>
+                  <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
+                    Multi-Track Dashboard
+                  </h1>
+                  <p className="text-xs sm:text-sm" style={{ color: theme.muted }}>
+                    {settings.locationName} · {guessTimezone()}
+                  </p>
                 </div>
-                <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
-                  Multi-Track Dashboard
-                </h1>
-                <p className="text-xs sm:text-sm" style={{ color: theme.muted }}>
-                  {settings.locationName} · {guessTimezone()}
-                </p>
               </div>
               <div className="text-right">
                 <div className="text-3xl font-bold tabular-nums sm:text-4xl" suppressHydrationWarning>
@@ -289,6 +293,8 @@ export default function Dashboard({
           Tri-calendar · world clocks · live weather · salah reminders — all in one interface.
         </footer>
       </main>
+
+      <InstallApp />
 
       {toast ? (
         <div
