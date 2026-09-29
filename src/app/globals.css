@@ -1,0 +1,290 @@
+@import "tailwindcss";
+
+:root {
+  --app-bg: linear-gradient(180deg, #05060f, #101a44);
+  --panel: rgba(255, 255, 255, 0.1);
+  --panel-border: rgba(255, 255, 255, 0.18);
+  --accent: #8ab4ff;
+  --accent-soft: rgba(138, 180, 255, 0.18);
+  --fg: #eaf0ff;
+  --muted: rgba(234, 240, 255, 0.68);
+  --glow: 0 0 60px rgba(90, 130, 255, 0.3);
+  --ring: rgba(138, 180, 255, 0.8);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  color: var(--fg);
+  background: #05060f;
+  overscroll-behavior-y: none;
+}
+
+.app-shell {
+  background: var(--app-bg);
+  background-attachment: fixed;
+  color: var(--fg);
+  transition: background 1200ms ease, color 600ms ease;
+  min-height: 100vh;
+}
+
+.glass {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 260ms ease,
+    background 500ms ease, border-color 500ms ease;
+}
+
+.glass-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.34), var(--glow);
+}
+
+.press {
+  transition: transform 140ms cubic-bezier(0.22, 1, 0.36, 1), filter 160ms ease;
+}
+.press:active {
+  transform: scale(0.955);
+  filter: brightness(1.12);
+}
+
+/* ---------------------------- ripple (touch) ---------------------------- */
+.ripple-host {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.ripple-dot {
+  position: absolute;
+  border-radius: 9999px;
+  transform: translate(-50%, -50%) scale(0);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0));
+  pointer-events: none;
+  animation: ripple-out 620ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  z-index: 0;
+}
+@keyframes ripple-out {
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
+/* -------------------------------- splash -------------------------------- */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 45%, #14204f 0%, #05060f 70%);
+  animation: splash-out 700ms ease 2400ms forwards;
+}
+@keyframes splash-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+    transform: scale(1.08);
+  }
+}
+.splash-ring {
+  position: absolute;
+  border-radius: 9999px;
+  border: 1px solid rgba(138, 180, 255, 0.45);
+  animation: ring-pulse 2.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+@keyframes ring-pulse {
+  0% {
+    transform: scale(0.35);
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+.splash-word {
+  animation: word-in 900ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@keyframes word-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.92);
+    filter: blur(8px);
+  }
+}
+.splash-bar {
+  animation: bar-fill 2200ms cubic-bezier(0.55, 0, 0.2, 1) forwards;
+}
+@keyframes bar-fill {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+/* ------------------------------ entrances ------------------------------- */
+.rise {
+  animation: rise-in 700ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(26px) scale(0.98);
+  }
+}
+.fade {
+  animation: fade-in 500ms ease backwards;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.pop {
+  animation: pop-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+
+/* ------------------------------- ambience ------------------------------- */
+.stars {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.star {
+  position: absolute;
+  border-radius: 9999px;
+  background: #fff;
+  animation: twinkle 4s ease-in-out infinite;
+}
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.25);
+  }
+}
+.orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(46px);
+  opacity: 0.4;
+  animation: drift 22s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(48px, -38px, 0) scale(1.18);
+  }
+}
+
+.pulse-dot {
+  animation: soft-pulse 2.2s ease-in-out infinite;
+}
+@keyframes soft-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.35);
+  }
+}
+
+.spin-slow {
+  animation: spin 32s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.shimmer {
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 20%,
+    rgba(255, 255, 255, 0.28) 50%,
+    rgba(255, 255, 255, 0) 80%
+  );
+  background-size: 220% 100%;
+  animation: shimmer-move 2.2s linear infinite;
+}
+@keyframes shimmer-move {
+  to {
+    background-position: -220% 0;
+  }
+}
+
+.ring-flash {
+  animation: ring-flash 1.6s ease-in-out infinite;
+}
+@keyframes ring-flash {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--accent-soft);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(255, 255, 255, 0);
+  }
+}
+
+.scroll-x {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ring) transparent;
+}
+.scroll-x::-webkit-scrollbar {
+  height: 6px;
+}
+.scroll-x::-webkit-scrollbar-thumb {
+  background: var(--accent-soft);
+  border-radius: 9999px;
+}
+
+input[type="time"],
+input[type="text"],
+input[type="number"],
+select {
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
