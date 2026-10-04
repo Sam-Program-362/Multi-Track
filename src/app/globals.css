@@ -45,39 +45,27 @@ body {
     background 500ms ease, border-color 500ms ease;
 }
 
-.glass-hover:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.34), var(--glow);
-}
-
-.press {
-  transition: transform 140ms cubic-bezier(0.22, 1, 0.36, 1), filter 160ms ease;
-}
-.press:active {
-  transform: scale(0.955);
-  filter: brightness(1.12);
-}
-
-/* ---------------------------- ripple (touch) ---------------------------- */
-.ripple-host {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-}
-.ripple-dot {
-  position: absolute;
-  border-radius: 9999px;
-  transform: translate(-50%, -50%) scale(0);
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0));
-  pointer-events: none;
-  animation: ripple-out 620ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  z-index: 0;
-}
-@keyframes ripple-out {
-  to {
-    transform: translate(-50%, -50%) scale(1);
-    opacity: 0;
+/* Hover lift only on devices that really hover (mouse). On touch screens
+   :hover sticks after a tap and makes panels jump, so it is disabled there. */
+@media (hover: hover) {
+  .glass-hover:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 26px 60px rgba(0, 0, 0, 0.34), var(--glow);
   }
+}
+
+/* Light, fast press feedback for tappable things only (buttons, chips, cells). */
+.press {
+  transition: transform 120ms ease-out, filter 120ms ease-out;
+}
+@media (hover: hover) {
+  .press:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
+}
+.press:active:not(:disabled) {
+  transform: scale(0.98);
+  filter: brightness(1.12);
 }
 
 /* -------------------------------- splash -------------------------------- */
