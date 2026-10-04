@@ -1,60 +1,18 @@
 "use client";
 
-import {
-  useCallback,
-  useRef,
-  useState,
-  type ButtonHTMLAttributes,
-  type ReactNode,
-} from "react";
-
-type Ripple = { id: number; x: number; y: number; size: number };
-
-export function useRipples() {
-  const [ripples, setRipples] = useState<Ripple[]>([]);
-  const counter = useRef(0);
-
-  const spawn = useCallback((event: React.PointerEvent<HTMLElement>) => {
-    const target = event.currentTarget;
-    const rect = target.getBoundingClientRect();
-    const size = Math.max(rect.width, rect.height) * 2.1;
-    const id = counter.current++;
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    setRipples((prev) => [...prev.slice(-4), { id, x, y, size }]);
-    window.setTimeout(() => {
-      setRipples((prev) => prev.filter((r) => r.id !== id));
-    }, 640);
-  }, []);
-
-  const nodes = ripples.map((r) => (
-    <span
-      key={r.id}
-      className="ripple-dot"
-      style={{ left: r.x, top: r.y, width: r.size, height: r.size }}
-    />
-  ));
-
-  return { spawn, nodes };
-}
+import { type ButtonHTMLAttributes, type ReactNode } from "react";
 
 type TouchableProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;
 };
 
-export function Touchable({ children, className = "", onPointerDown, ...rest }: TouchableProps) {
-  const { spawn, nodes } = useRipples();
+/**
+ * Plain button with a very light press response (see `.press` in globals.css).
+ * No ripple, no vibration.
+ */
+export function Touchable({ children, className = "", ...rest }: TouchableProps) {
   return (
-    <button
-      {...rest}
-      onPointerDown={(e) => {
-        spawn(e);
-        if (navigator.vibrate) navigator.vibrate(8);
-        onPointerDown?.(e);
-      }}
-      className={`ripple-host press ${className}`}
-    >
-      {nodes}
+    <button {...rest} className={`press relative overflow-hidden ${className}`}>
       <span className="relative z-10 flex items-center justify-center gap-2">{children}</span>
     </button>
   );
@@ -71,14 +29,11 @@ export function Panel({
   delay?: number;
   hover?: boolean;
 }) {
-  const { spawn, nodes } = useRipples();
   return (
     <section
-      onPointerDown={spawn}
-      className={`glass ripple-host rise rounded-3xl ${hover ? "glass-hover" : ""} ${className}`}
+      className={`glass rise relative isolate overflow-hidden rounded-3xl ${hover ? "glass-hover" : ""} ${className}`}
       style={{ animationDelay: `${delay}ms` }}
     >
-      {nodes}
       <div className="relative z-10">{children}</div>
     </section>
   );
