@@ -21,6 +21,8 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     shortcuts: [
       { name: "Open dashboard", short_name: "Dashboard", url: "/", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
+      { name: "Clock widget", short_name: "Clock", url: "/widgets/digital-clock", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
+      { name: "All widgets", short_name: "Widgets", url: "/widgets", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
     ],
   };
 }

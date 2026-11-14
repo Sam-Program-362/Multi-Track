@@ -18,6 +18,7 @@ import WeatherPanel from "./WeatherPanel";
 import IslamicPanel from "./IslamicPanel";
 import { Touchable } from "./ui";
 import InstallApp from "./InstallApp";
+import WidgetsPanel from "./widgets/WidgetsPanel";
 
 const PHASE_OPTIONS: Array<DayPhase | "auto"> = [
   "auto",
@@ -46,9 +47,12 @@ export default function Dashboard({
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
-    setMounted(true);
+    const mountTimer = window.setTimeout(() => setMounted(true), 0);
     const timer = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(mountTimer);
+      window.clearInterval(timer);
+    };
   }, []);
 
   const phase: DayPhase = override === "auto" ? phaseForHour(now.getHours()) : override;
@@ -141,8 +145,8 @@ export default function Dashboard({
     [flash],
   );
 
-  const hijri = useMemo(() => toHijri(now), [now.getDate(), now.getMonth(), now.getFullYear()]); // eslint-disable-line react-hooks/exhaustive-deps
-  const bangla = useMemo(() => toBangla(now), [now.getDate(), now.getMonth(), now.getFullYear()]); // eslint-disable-line react-hooks/exhaustive-deps
+  const hijri = useMemo(() => toHijri(now), [now]);
+  const bangla = useMemo(() => toBangla(now), [now]);
 
   const stars = useMemo(
     () =>
@@ -268,6 +272,8 @@ export default function Dashboard({
             </div>
           </div>
         </header>
+
+        <WidgetsPanel />
 
         <div className="grid gap-4 lg:grid-cols-2">
           <CalendarPanel now={now} />

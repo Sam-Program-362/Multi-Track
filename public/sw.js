@@ -1,5 +1,14 @@
-const CACHE = "multi-track-v1";
-const APP_SHELL = ["/", "/offline.html", "/logo.svg", "/icons/icon-192.png", "/icons/icon-512.png"];
+const CACHE = "multi-track-v2";
+const APP_SHELL = [
+  "/",
+  "/widgets",
+  "/widgets/digital-clock",
+  "/manifest.webmanifest",
+  "/offline.html",
+  "/logo.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)));
@@ -27,6 +36,21 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch(async () => (await caches.match(request)) || (await caches.match("/")) || caches.match("/offline.html")),
+    );
+    return;
+  }
+
+  // Next.js client-side navigations fetch RSC payloads instead of documents.
+  // Cache them so links between the dashboard and widgets keep working offline.
+  const isRsc = request.headers.get("RSC") === "1" || url.searchParams.has("_rsc");
+  if (isRsc) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) caches.open(CACHE).then((cache) => cache.put(request, response.clone()));
+          return response;
+        })
+        .catch(async () => (await caches.match(request)) || new Response(null, { status: 503, statusText: "Offline" })),
     );
     return;
   }

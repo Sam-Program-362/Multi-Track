@@ -22,7 +22,7 @@ type Layer = "hijri" | "bangla";
 export default function CalendarPanel({ now }: { now: Date }) {
   const today = useMemo(
     () => new Date(now.getFullYear(), now.getMonth(), now.getDate()),
-    [now.getFullYear(), now.getMonth(), now.getDate()], // eslint-disable-line react-hooks/exhaustive-deps
+    [now],
   );
   const [cursor, setCursor] = useState(() => ({
     year: today.getFullYear(),
