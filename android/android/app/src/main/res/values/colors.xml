@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches themeColor / splash background in the web app. -->
+    <color name="appBackground">#05060f</color>
+</resources>
