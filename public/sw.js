@@ -1,4 +1,5 @@
-const CACHE = "multi-track-v1";
+// v3 clears the retired web-widget routes from older caches.
+const CACHE = "multi-track-v3";
 const APP_SHELL = ["/", "/offline.html", "/logo.svg", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {

@@ -27,6 +27,26 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Empty provider label: some launchers draw this label as a caption
+             beneath the home-screen widget. The picker still has the preview
+             and description; the widget surface itself stays caption-free. -->
+        <receiver
+            android:name=".widget.DigitalClockWidgetProvider"
+            android:exported="true"
+            android:label="">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.LOCALE_CHANGED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="com.samprogram.multitrack.widget.REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_digital_clock_info" />
+        </receiver>
     </application>
 
     <!-- Permissions -->

@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plain transparent clock: no card/background behind the numerals. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="@dimen/widget_padding"
+    android:background="@android:color/transparent"
+    android:contentDescription="@string/widget_digital_clock_description">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:baselineAligned="true">
+
+        <TextClock
+            android:id="@+id/widget_hours"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:format12Hour="hh"
+            android:format24Hour="hh"
+            android:textSize="@dimen/widget_time_text_size"
+            android:fontFamily="sans-serif-light"
+            android:textColor="@color/widget_fg"
+            android:letterSpacing="-0.03"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:shadowColor="@color/widget_shadow"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="3" />
+
+        <TextView
+            android:id="@+id/widget_colon_main"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/widget_colon"
+            android:textSize="@dimen/widget_time_text_size"
+            android:fontFamily="sans-serif-light"
+            android:textColor="@color/widget_colon"
+            android:includeFontPadding="false"
+            android:paddingStart="@dimen/widget_colon_padding"
+            android:paddingEnd="@dimen/widget_colon_padding"
+            android:shadowColor="@color/widget_shadow"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="3" />
+
+        <TextClock
+            android:id="@+id/widget_minutes"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:format12Hour="mm"
+            android:format24Hour="mm"
+            android:textSize="@dimen/widget_time_text_size"
+            android:fontFamily="sans-serif-light"
+            android:textColor="@color/widget_fg"
+            android:letterSpacing="-0.03"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:shadowColor="@color/widget_shadow"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="3" />
+
+        <TextView
+            android:id="@+id/widget_colon_seconds"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/widget_colon"
+            android:textSize="@dimen/widget_seconds_text_size"
+            android:fontFamily="sans-serif"
+            android:textColor="@color/widget_colon"
+            android:includeFontPadding="false"
+            android:paddingStart="@dimen/widget_colon_padding"
+            android:paddingEnd="@dimen/widget_colon_padding"
+            android:shadowColor="@color/widget_shadow"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="3" />
+
+        <!-- Exactly half the hour/minute text size. -->
+        <TextClock
+            android:id="@+id/widget_seconds"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:format12Hour="ss"
+            android:format24Hour="ss"
+            android:textSize="@dimen/widget_seconds_text_size"
+            android:fontFamily="sans-serif"
+            android:textColor="@color/widget_fg"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:shadowColor="@color/widget_shadow"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="3" />
+
+        <ImageView
+            android:id="@+id/widget_meridiem"
+            android:layout_width="@dimen/widget_meridiem_size"
+            android:layout_height="@dimen/widget_meridiem_size"
+            android:layout_gravity="center_vertical"
+            android:layout_marginStart="@dimen/widget_meridiem_margin"
+            android:src="@drawable/widget_sun"
+            android:scaleType="fitCenter"
+            android:contentDescription="@string/widget_am" />
+    </LinearLayout>
+
+    <TextClock
+        android:id="@+id/widget_date"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/widget_date_margin"
+        android:format12Hour="EEEE, MMMM d"
+        android:format24Hour="EEEE, MMMM d"
+        android:textSize="@dimen/widget_date_text_size"
+        android:fontFamily="sans-serif"
+        android:textColor="@color/widget_muted"
+        android:letterSpacing="0.03"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:shadowColor="@color/widget_shadow"
+        android:shadowDx="0"
+        android:shadowDy="1"
+        android:shadowRadius="3" />
+</LinearLayout>

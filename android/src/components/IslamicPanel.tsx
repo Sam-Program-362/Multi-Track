@@ -98,7 +98,7 @@ export default function IslamicPanel({
 
   const today = useMemo(
     () => new Date(now.getFullYear(), now.getMonth(), now.getDate()),
-    [now.getFullYear(), now.getMonth(), now.getDate()], // eslint-disable-line react-hooks/exhaustive-deps
+    [now],
   );
 
   const schedule = useMemo(

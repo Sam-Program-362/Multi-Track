@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="widget_time_text_size">56sp</dimen>
+    <!-- Exactly half of widget_time_text_size. -->
+    <dimen name="widget_seconds_text_size">28sp</dimen>
+    <dimen name="widget_date_text_size">13sp</dimen>
+    <dimen name="widget_meridiem_size">18dp</dimen>
+    <dimen name="widget_meridiem_margin">6dp</dimen>
+    <dimen name="widget_date_margin">4dp</dimen>
+    <dimen name="widget_colon_padding">1dp</dimen>
+    <dimen name="widget_padding">8dp</dimen>
+</resources>
