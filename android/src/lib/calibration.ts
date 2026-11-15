@@ -175,6 +175,12 @@ export type StoredRuleInput = {
  *  - `delay` a constant "N minutes after the azan" (moves with the sun)
  *  - `clock` a fixed daily clock time (e.g. 13:30 all year)
  *  - `table` a dated seasonal table: the newest entry on/before the date wins
+ *
+ * SCOPE: the seasonal table applies to **jamaat only**. The azan has no dated
+ * seasonal rules — it is always astronomy for that date plus Δuser. A mosque
+ * whose *azan* board also changes on its own seasonal policy cannot be
+ * reproduced by this model, and the app must not invent such adjustments: it
+ * needs real dated azan rules first (see docs/prayer-time-calibration.md).
  */
 export type IqamahMode = "none" | "delay" | "clock" | "table";
 

@@ -75,6 +75,26 @@ usable entries resolves to *nothing* rather than a guessed time.
 rule. The app never fits a seasonal curve to one data point; it says so in the editor and offers
 the table for mosques whose board changes through the year.
 
+### Scope of the annual schedule: jamaat only
+
+This is deliberate and should stay that way unless real data arrives:
+
+| | Azan (prayer begins) | Jamaat (congregation) |
+| --- | --- | --- |
+| Model | astronomy for the date + `Δuser` | mosque policy (none / delay / clock / dated table) |
+| Dated seasonal rules | **none** | the `table` mode |
+| Editable independently | yes | yes |
+| Affects the other | no | no |
+
+So the seasonal table introduced here applies to **jamaat**, not to the azan. The azan remains a
+pure astronomical projection, because that is what it is: the sun's position, not a committee's
+decision. Where a mosque's *azan* timetable also follows its own changing seasonal policy
+(rather than the sun), that would need a separate dated azan rule type, and it must be driven by
+evidence — a published board, an imported timetable, or dated user entries — not by a guessed
+curve. **Open question, not implemented:** are dated azan rules actually needed for the mosques
+this app targets? Until that is established, the app deliberately offers no such adjustment.
+
+
 ## Module map
 
 `src/lib/prayer.ts` — astronomy only (report §3):
@@ -141,10 +161,23 @@ rows — including every row written before this branch — are valid without a 
 the clock time the user typed — it never drives scheduling.
 
 `src/db/ensure-schema.ts` runs the same `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
-statements once per process before the first prayer read/write, so a deploy against a
-database that was created before this feature keeps working without a separate migration
-step (this repository has no migration runner on Vercel). The statements are idempotent;
-you can still apply them explicitly with `npx drizzle-kit push` or the SQL file.
+statements before the first settings/prayer read or write, so a deploy against a database
+created before this feature keeps working without a separate migration step (this
+repository has no migration runner on Vercel). The statements are idempotent; you can still
+apply them explicitly with `npx drizzle-kit push` or the SQL file.
+
+**Initialization contract** (`src/db/ensure-schema.ts` + `src/db/schema-gate.ts`):
+
+* success is cached once per process;
+* a failure is **never** cached — the next request retries, so a database blip does not
+  leave a permanently degraded process;
+* callers receive `{ ok: true } | { ok: false, error }` and must not read or write the new
+  columns when it is `false` (API routes answer `503`; the page renders a warning banner and
+  performs no migration);
+* the loading order is fixed in `src/lib/app-store.ts`: **schema → settings → prayer
+  preferences**. Only a settings row that was actually read from the database
+  (`snapshot.fromDatabase`) may be used to derive legacy `Δuser` offsets. Fallback defaults
+  are display-only, and nothing is written when the context is unavailable.
 
 `PUT /api/prayers` accepts a partial rule:
 
@@ -231,6 +264,8 @@ matters precisely because these are exact-minute alarms.
 | `tests/prayer-write.test.ts` | The pure `PUT /api/prayers` decision: recalibrate vs nudge vs fixed clock vs reset, jamaat validation, partial updates, legacy upgrades, invalid input rejection |
 | `tests/android-store.test.ts` | v1→v3 and v2→v3 device migrations against an in-memory Capacitor Preferences, unknown future versions, corrupt payloads, policy-preserving saves |
 | `tests/parity.test.ts` | `prayer.ts`, `calibration.ts`, `timezones.ts`, `calendars.ts`, `islamicEvents.ts` are byte-identical in both apps, and `PrayerPref` has the same shape |
+| `tests/home-load.test.ts` | The **real home-page sequence** against a fake old database: schema runs before any read, the user's real settings (not Dhaka) drive every legacy offset, settings are never rewritten, schema/settings/write failures never persist a migration and recover on retry |
+| `tests/schema-gate.test.ts` | Schema initialization: success cached once, failure never cached, retries succeed, concurrent callers share one attempt, synchronous throws become statuses |
 
 Worked values used as fixtures:
 

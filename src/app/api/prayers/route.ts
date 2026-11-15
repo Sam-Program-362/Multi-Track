@@ -1,16 +1,28 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
 import { ensurePrayerCalibrationSchema } from "@/db/ensure-schema";
 import { prayerPrefs } from "@/db/schema";
-import { getPrayerPrefs, getSettings } from "@/lib/server-data";
+import { db } from "@/db";
+import { loadPrayerPrefs, loadSettingsSnapshot } from "@/lib/server-data";
 import { contextFrom } from "@/lib/calibration";
 import { resolvePrayerWrite } from "@/lib/prayer-write";
+import { PRAYER_ORDER } from "@/lib/prayer";
+import { eq } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return NextResponse.json(await getPrayerPrefs());
+  const snapshot = await loadSettingsSnapshot();
+  if (!snapshot.schema.ok) {
+    return NextResponse.json(
+      { error: "Database schema is not ready", detail: snapshot.schema.error },
+      { status: 503 },
+    );
+  }
+  const load = await loadPrayerPrefs(snapshot);
+  if (load.notice && load.prefs.length === 0) {
+    return NextResponse.json({ error: load.notice }, { status: 503 });
+  }
+  return NextResponse.json(load.prefs);
 }
 
 /**
@@ -25,7 +37,7 @@ export async function GET() {
  *  - `customTime` alone is treated as the audit trail of the clock time the
  *    user typed; it never drives scheduling.
  *  - `iqamah: {...}`                         → the mosque's jamaat policy,
- *    validated by `normalizeIqaamah` and stored separately from the azan rule.
+ *    validated by `normalizeIqamah` and stored separately from the azan rule.
  *  - `reminderAt: "azan" | "iqamah"`         → which time the reminder follows.
  *
  * Everything is a partial update: fields that are not sent keep their value.
@@ -40,18 +52,35 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // Make sure the columns exist before reading or writing them.
-  await ensurePrayerCalibrationSchema();
+  // Never write the calibration columns unless the DDL has actually run.
+  const schema = await ensurePrayerCalibrationSchema();
+  if (!schema.ok) {
+    return NextResponse.json(
+      { error: "Database schema is not ready", detail: schema.error },
+      { status: 503 },
+    );
+  }
 
   const key = (typeof body.prayerKey === "string" ? body.prayerKey : "").trim();
-  const ctx = contextFrom(await getSettings());
-  const [existing] = key
-    ? await db
-        .select()
-        .from(prayerPrefs)
-        .where(eq(prayerPrefs.prayerKey, key))
-        .limit(1)
-    : [undefined];
+  if (!(PRAYER_ORDER as string[]).includes(key)) {
+    return NextResponse.json({ error: "Unknown prayer key" }, { status: 400 });
+  }
+
+  // A write needs the user's real calculation context, not built-in defaults.
+  const snapshot = await loadSettingsSnapshot();
+  if (snapshot.notice) {
+    return NextResponse.json(
+      { error: "Settings are unavailable", detail: snapshot.notice },
+      { status: 503 },
+    );
+  }
+
+  const ctx = contextFrom(snapshot.settings);
+  const [existing] = await db
+    .select()
+    .from(prayerPrefs)
+    .where(eq(prayerPrefs.prayerKey, key))
+    .limit(1);
 
   const resolved = resolvePrayerWrite({
     body,
@@ -90,5 +119,9 @@ export async function PUT(request: Request) {
     );
   }
 
-  return NextResponse.json(await getPrayerPrefs());
+  const after = await loadPrayerPrefs(snapshot);
+  if (after.notice) {
+    console.error(`[prayers] saved, but re-reading failed: ${after.notice}`);
+  }
+  return NextResponse.json(after.prefs);
 }

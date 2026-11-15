@@ -1,16 +1,22 @@
 import Dashboard from "@/components/Dashboard";
-import { getClocks, getPrayerPrefs, getSettings } from "@/lib/server-data";
+import { getClocks, loadHomeData } from "@/lib/server-data";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  // Settings first so the prayer preferences can reuse them: the calibration
-  // context (location, method, timezone) lives on the settings row, and
-  // fetching it twice would race the first-run seeding insert.
-  const settings = await getSettings();
-  const [clocks, prefs] = await Promise.all([getClocks(), getPrayerPrefs(settings)]);
+  // One function owns the order: schema first, then the user's real settings,
+  // then the prayer preferences (see `loadHomeData`). Reading settings before
+  // the schema was ready used to fall back to Dhaka defaults, and those
+  // defaults were then used to derive legacy prayer offsets.
+  const home = await loadHomeData();
+  const clocks = await getClocks();
 
   return (
-    <Dashboard initialSettings={settings} initialClocks={clocks} initialPrefs={prefs} />
+    <Dashboard
+      initialSettings={home.settings}
+      initialClocks={clocks}
+      initialPrefs={home.prefs}
+      initialNotice={home.notice}
+    />
   );
 }

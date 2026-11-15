@@ -626,7 +626,7 @@ export default function IslamicPanel({
                         <div className="flex flex-wrap items-baseline justify-between gap-1">
                           <span className="text-[11px] font-semibold">Jamaat (congregation)</span>
                           <span className="text-[10px]" style={{ color: "var(--muted)" }}>
-                            mosque policy · never changes the azan
+                            jamaat only · never changes the azan
                           </span>
                         </div>
                         <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -708,8 +708,10 @@ export default function IslamicPanel({
                         {draftIqamah.mode === "table" ? (
                           <div className="mt-1.5 space-y-1.5">
                             <p className="text-[10px] leading-relaxed" style={{ color: "var(--muted)" }}>
-                              Copy the dates from the mosque board. The newest entry on or before a
-                              date applies; before the first entry the earliest one does.
+                              Copy the jamaat dates from the mosque board. The newest entry on or
+                              before a date applies; before the first entry the earliest one does.
+                              This table changes the jamaat time only — the azan keeps following
+                              the sun plus your offset.
                             </p>
                             {draftIqamah.table.length === 0 ? (
                               <p className="text-[10px]" style={{ color: "var(--muted)" }}>

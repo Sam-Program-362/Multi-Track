@@ -3,67 +3,92 @@ import { db } from "@/db";
 import { ensurePrayerCalibrationSchema } from "@/db/ensure-schema";
 import { appSettings, prayerPrefs, worldClocks } from "@/db/schema";
 import {
-  contextFrom,
-  normalizeIqamah,
-  normalizeStoredRule,
-  sanitizeReminderTarget,
-} from "./calibration";
-import type { HighLatitudeRule, MethodKey } from "./prayer";
+  loadHomeData as loadHomeDataWith,
+  loadPrayerPrefs as loadPrayerPrefsWith,
+  loadSettingsSnapshot as loadSettingsSnapshotWith,
+  type AppStore,
+  type ClockRow,
+  type PrayerPrefsLoad,
+  type SettingsSnapshot,
+} from "./app-store";
 import type { PrayerPref, Settings, WorldClock } from "./types";
 
-const DEFAULT_SETTINGS: Settings = {
-  id: 0,
-  locationName: "Dhaka, Bangladesh",
-  latitude: 23.8103,
-  longitude: 90.4125,
-  timezone: "Asia/Dhaka",
-  method: "Karachi",
-  asrJuristic: "Standard",
-  elevationMeters: 0,
-  highLatitudeRule: "auto",
-  use24Hour: false,
-  remindersEnabled: true,
-  reminderSound: "chime",
-};
+export { DEFAULT_SETTINGS } from "./app-store";
+export type {
+  AppStore,
+  HomeData,
+  PrayerRow,
+  PrayerRowUpdate,
+  PrayerPrefsLoad,
+  SettingsRow,
+  SettingsSnapshot,
+} from "./app-store";
 
-export async function getSettings(): Promise<Settings> {
-  try {
+/**
+ * Drizzle adapter for the loading sequence in `./app-store`.
+ *
+ * The sequence itself is database-independent so it can be tested against a
+ * fake old schema; this module is only the I/O.
+ */
+export const liveStore: AppStore = {
+  ensureSchema: () => ensurePrayerCalibrationSchema(),
+
+  async readSettingsRow() {
     const rows = await db
       .select()
       .from(appSettings)
       .where(eq(appSettings.profile, "default"))
       .limit(1);
-    if (rows.length === 0) {
-      const inserted = await db
-        .insert(appSettings)
-        .values({ profile: "default" })
-        .returning();
-      return rowToSettings(inserted[0]);
-    }
-    return rowToSettings(rows[0]);
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
+    return rows[0] ?? null;
+  },
+
+  async insertDefaultSettings() {
+    const inserted = await db
+      .insert(appSettings)
+      .values({ profile: "default" })
+      .onConflictDoNothing({ target: appSettings.profile })
+      .returning();
+    if (inserted[0]) return inserted[0];
+    const rows = await db
+      .select()
+      .from(appSettings)
+      .where(eq(appSettings.profile, "default"))
+      .limit(1);
+    return rows[0] ?? null;
+  },
+
+  async readPrayerRows() {
+    return db.select().from(prayerPrefs);
+  },
+
+  async updatePrayerRow(values) {
+    await db.update(prayerPrefs).set(values).where(eq(prayerPrefs.prayerKey, values.prayerKey));
+  },
+};
+
+/**
+ * Production entry points: the pure sequence from `./app-store`, bound to the
+ * live Drizzle store. Tests import the unbound versions with a fake store.
+ */
+export const loadSettingsSnapshot = (): Promise<SettingsSnapshot> =>
+  loadSettingsSnapshotWith(liveStore);
+
+export const loadPrayerPrefs = (snapshot: SettingsSnapshot): Promise<PrayerPrefsLoad> =>
+  loadPrayerPrefsWith(liveStore, snapshot);
+
+export const loadHomeData = () => loadHomeDataWith(liveStore);
+
+/**
+ * Settings for callers that only render them. A failure is logged and returned
+ * as defaults for display, but `loadPrayerPrefs` will refuse to migrate on it.
+ */
+export async function getSettings(): Promise<Settings> {
+  const snapshot = await loadSettingsSnapshot();
+  if (snapshot.notice) console.error(`[settings] ${snapshot.notice}`);
+  return snapshot.settings;
 }
 
-function rowToSettings(row: typeof appSettings.$inferSelect): Settings {
-  return {
-    id: row.id,
-    locationName: row.locationName,
-    latitude: row.latitude,
-    longitude: row.longitude,
-    timezone: row.timezone,
-    method: row.method as MethodKey,
-    asrJuristic: row.asrJuristic === "Hanafi" ? "Hanafi" : "Standard",
-    elevationMeters: Number.isFinite(row.elevationMeters) ? row.elevationMeters : 0,
-    highLatitudeRule: (row.highLatitudeRule as HighLatitudeRule) ?? "auto",
-    use24Hour: row.use24Hour,
-    remindersEnabled: row.remindersEnabled,
-    reminderSound: row.reminderSound,
-  };
-}
-
-const SEED_CLOCKS = [
+const SEED_CLOCKS: Array<Omit<WorldClock, "id">> = [
   { label: "Makkah", timezone: "Asia/Riyadh", accent: "emerald", sortOrder: 1 },
   { label: "Dhaka", timezone: "Asia/Dhaka", accent: "cyan", sortOrder: 2 },
   { label: "London", timezone: "Europe/London", accent: "violet", sortOrder: 3 },
@@ -83,7 +108,7 @@ export async function getClocks(): Promise<WorldClock[]> {
   }
 }
 
-function toClock(row: typeof worldClocks.$inferSelect): WorldClock {
+function toClock(row: ClockRow): WorldClock {
   return {
     id: row.id,
     label: row.label,
@@ -94,88 +119,15 @@ function toClock(row: typeof worldClocks.$inferSelect): WorldClock {
 }
 
 /**
- * Prayers with their calibration state.
+ * Backwards-compatible wrapper.
  *
- * Rows written before the calibration model existed only carry `customTime`
- * (a static override). They are upgraded on read: Δuser is recovered from the
- * old clock time against today's astronomical baseline, so the prayer keeps
- * showing the user's familiar time today and starts following the sun from
- * then on (no data loss, no manual re-entry). The derived rule is written
- * back, otherwise every read would re-pin the time to the entered clock value
- * and the time would never drift at all.
+ * Note the signature: it accepts a `SettingsSnapshot`, **not** a `Settings`.
+ * Handing it bare settings (the old home-page order) is now a type error,
+ * because a fallback context must never be used to derive offsets.
  */
-export async function getPrayerPrefs(settings?: Settings): Promise<PrayerPref[]> {
-  try {
-    await ensurePrayerCalibrationSchema();
-    const rows = await db.select().from(prayerPrefs);
-    const ctx = contextFrom(settings ?? (await getSettings()));
-    const now = new Date();
-    const prefs = rows.map((row) => {
-      const iqamah = normalizeIqamah(row.iqamah);
-      // Canonical form, so a hand-edited or legacy row is rewritten once.
-      const iqamahText = JSON.stringify(iqamah);
-      const reminderAt = sanitizeReminderTarget(row.reminderAt);
-      const rule = normalizeStoredRule(
-        row.prayerKey,
-        {
-          mode: row.mode,
-          offsetMinutes: row.offsetMinutes,
-          stepMinutes: row.stepMinutes,
-          fixedTime: row.fixedTime,
-          customTime: row.customTime,
-          calibratedAt: row.calibratedAt,
-        },
-        ctx,
-        now,
-      );
-      return {
-        pref: {
-          prayerKey: row.prayerKey,
-          mode: rule.mode,
-          offsetMinutes: rule.offsetMin,
-          stepMinutes: rule.stepMin,
-          fixedTime: rule.fixedClock,
-          customTime: row.customTime,
-          calibratedAt: rule.calibratedAt,
-          reminderEnabled: row.reminderEnabled,
-          iqamah,
-          reminderAt,
-        } satisfies PrayerPref,
-        dirty:
-          rule.calibratedAt !== row.calibratedAt ||
-          rule.offsetMin !== row.offsetMinutes ||
-          rule.mode !== row.mode ||
-          rule.stepMin !== row.stepMinutes ||
-          rule.fixedClock !== row.fixedTime ||
-          iqamahText !== (row.iqamah ?? null) ||
-          reminderAt !== row.reminderAt,
-      };
-    });
-
-    // One-time backfill of legacy rows; failures must not break loading.
-    const stale = prefs.filter((entry) => entry.dirty);
-    if (stale.length > 0) {
-      await Promise.all(
-        stale.map((entry) =>
-          db
-            .update(prayerPrefs)
-            .set({
-              mode: entry.pref.mode,
-              offsetMinutes: entry.pref.offsetMinutes,
-              stepMinutes: entry.pref.stepMinutes,
-              fixedTime: entry.pref.fixedTime,
-              calibratedAt: entry.pref.calibratedAt,
-              iqamah: JSON.stringify(entry.pref.iqamah),
-              reminderAt: entry.pref.reminderAt,
-            })
-            .where(eq(prayerPrefs.prayerKey, entry.pref.prayerKey))
-            .catch(() => undefined),
-        ),
-      ).catch(() => undefined);
-    }
-
-    return prefs.map((entry) => entry.pref);
-  } catch {
-    return [];
-  }
+export async function getPrayerPrefs(snapshot?: SettingsSnapshot): Promise<PrayerPref[]> {
+  const resolved = snapshot ?? (await loadSettingsSnapshot());
+  const load: PrayerPrefsLoad = await loadPrayerPrefs(resolved);
+  if (load.notice) console.error(`[prayers] ${load.notice}`);
+  return load.prefs;
 }

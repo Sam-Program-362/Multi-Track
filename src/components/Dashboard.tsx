@@ -32,10 +32,13 @@ export default function Dashboard({
   initialSettings,
   initialClocks,
   initialPrefs,
+  initialNotice,
 }: {
   initialSettings: Settings;
   initialClocks: WorldClock[];
   initialPrefs: PrayerPref[];
+  /** Set when the server could not prepare the database/settings. */
+  initialNotice?: string | null;
 }) {
   const [now, setNow] = useState(() => new Date());
   const [settings, setSettings] = useState(initialSettings);
@@ -281,6 +284,19 @@ export default function Dashboard({
             </div>
           </div>
         </header>
+
+        {initialNotice ? (
+          <div
+            className="mb-4 rounded-2xl border px-3 py-2 text-[11px] leading-relaxed"
+            style={{ borderColor: "#f59e0b", background: "rgba(245,158,11,0.12)" }}
+            role="alert"
+          >
+            <strong>Data warning</strong> — {initialNotice}
+            <div className="mt-0.5" style={{ color: "var(--muted)" }}>
+              Saved prayer times were left untouched; nothing was migrated with fallback settings.
+            </div>
+          </div>
+        ) : null}
 
         <div className="grid gap-4 lg:grid-cols-2">
           <CalendarPanel now={now} />
