@@ -1,3 +1,4 @@
+import type { TrackingMode } from "./calibration";
 import type { MethodKey } from "./prayer";
 
 export type Settings = {
@@ -21,10 +22,22 @@ export type WorldClock = {
   sortOrder: number;
 };
 
+/**
+ * One prayer's calibration state.
+ *
+ * `offsetMinutes` is Δuser(p) — the difference between the time the user
+ * entered and the astronomical baseline on `calibratedAt` — and is what makes
+ * the timer follow the seasons. `customTime` is kept only as an audit trail of
+ * the clock time the user typed; it is never used to schedule anything.
+ */
 export type PrayerPref = {
   prayerKey: string;
-  customTime: string | null;
+  mode: TrackingMode;
   offsetMinutes: number;
+  stepMinutes: number;
+  fixedTime: string | null;
+  customTime: string | null;
+  calibratedAt: string | null;
   reminderEnabled: boolean;
 };
 

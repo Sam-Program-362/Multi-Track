@@ -1,17 +1,26 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { METHODS, PRAYER_META, formatMinutes, type MethodKey } from "@/lib/prayer";
 import {
-  METHODS,
-  PRAYER_META,
-  PRAYER_ORDER,
-  computePrayerTimes,
-  formatMinutes,
-  minutesToInputValue,
-  parseTimeToMinutes,
-  type MethodKey,
-  type PrayerKey,
-} from "@/lib/prayer";
+  STEP_CHOICES,
+  TRACKING_MODES,
+  buildSchedule as buildCalibratedSchedule,
+  calibrationSummary,
+  captureOffsetMinutes,
+  dateKey,
+  describeRule,
+  detectedTimezone,
+  formatClock,
+  parseClock,
+  projectMinutes,
+  ruleBadge,
+  stepJumpMinutes,
+  timezoneDrift,
+  type CalibratedScheduleItem,
+  type PrayerRule,
+  type TrackingMode,
+} from "@/lib/calibration";
 import { upcomingIslamicEvents } from "@/lib/islamicEvents";
 import { toHijri } from "@/lib/calendars";
 import { zoneOffsetMinutes } from "@/lib/timezones";
@@ -27,41 +36,26 @@ import {
 import type { PrayerPref, Settings } from "@/lib/types";
 import { Panel, SectionTitle, Toggle, Touchable } from "./ui";
 
-export type ScheduleItem = {
-  key: PrayerKey;
-  minutes: number;
-  custom: boolean;
-  offset: number;
-  reminder: boolean;
-};
+/** One row of the day's schedule, with its astronomical baseline and rule. */
+export type ScheduleItem = CalibratedScheduleItem;
 
+/**
+ * Save-time hints that travel with a preference but are not stored:
+ * - recalibrate: the typed clock time is a calibration event, not just audit
+ * - reset: wipe the stored rule and audit time
+ */
+export type PrayerPrefWriteHints = { recalibrate?: boolean; reset?: boolean };
+
+/**
+ * The day's times: astronomical baseline for `date` projected through each
+ * prayer's stored calibration rule (see `lib/calibration.ts`).
+ */
 export function buildSchedule(
   date: Date,
   settings: Settings,
   prefs: PrayerPref[],
 ): ScheduleItem[] {
-  const tzHours = zoneOffsetMinutes(date, settings.timezone) / 60;
-  const times = computePrayerTimes(date, {
-    latitude: settings.latitude,
-    longitude: settings.longitude,
-    timezoneOffsetHours: tzHours,
-    method: settings.method as MethodKey,
-    asrJuristic: settings.asrJuristic,
-  });
-  const prefMap = new Map(prefs.map((p) => [p.prayerKey, p]));
-  return PRAYER_ORDER.map((key) => {
-    const pref = prefMap.get(key);
-    const customMinutes = pref?.customTime ? parseTimeToMinutes(pref.customTime) : null;
-    const base = customMinutes ?? Math.round(times[key] * 60);
-    const offset = pref?.offsetMinutes ?? 0;
-    return {
-      key,
-      minutes: ((base + offset) % 1440 + 1440) % 1440,
-      custom: customMinutes !== null,
-      offset,
-      reminder: pref?.reminderEnabled ?? true,
-    };
-  });
+  return buildCalibratedSchedule(date, settings, prefs);
 }
 
 function minutesNowIn(date: Date, timezone: string): number {
@@ -81,15 +75,18 @@ export default function IslamicPanel({
   settings: Settings;
   prefs: PrayerPref[];
   onSettings: (patch: Partial<Settings>) => Promise<void>;
-  onPref: (patch: PrayerPref) => Promise<void>;
+  onPref: (patch: PrayerPref & PrayerPrefWriteHints) => Promise<void>;
 }) {
   const [tab, setTab] = useState<"times" | "events" | "setup">("times");
   const [audioReady, setAudioReady] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const firedRef = useRef<Set<string>>(new Set());
-  const [editing, setEditing] = useState<PrayerKey | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draftMode, setDraftMode] = useState<TrackingMode>("dynamicOffset");
+  const [draftStep, setDraftStep] = useState<number>(10);
   const [draftTime, setDraftTime] = useState("");
   const [draftOffset, setDraftOffset] = useState(0);
+  const [tzDismissed, setTzDismissed] = useState(false);
 
   const today = useMemo(
     () => new Date(now.getFullYear(), now.getMonth(), now.getDate()),
@@ -152,18 +149,150 @@ export default function IslamicPanel({
     vibrate([60, 40, 60]);
   };
 
+  /** The rule as it currently stands in the editor (used by the preview). */
+  const draftRule: PrayerRule = {
+    mode: draftMode,
+    offsetMin: draftOffset,
+    stepMin: draftMode === "steppedOffset" ? draftStep : 0,
+    fixedClock: draftMode === "fixedClock" ? draftTime : null,
+    calibratedAt: null,
+  };
+
   const openEditor = (item: ScheduleItem) => {
     setEditing(item.key);
-    setDraftTime(minutesToInputValue(item.minutes - item.offset));
-    setDraftOffset(item.offset);
+    setDraftMode(item.mode);
+    setDraftStep(item.stepMinutes || 10);
+    setDraftOffset(item.offsetMinutes);
+    setDraftTime(formatClock(item.minutes));
+  };
+
+  /** Switching mode re-projects the visible time, so the editor stays WYSIWYG. */
+  const changeMode = (item: ScheduleItem, next: TrackingMode) => {
+    setDraftMode(next);
+    if (next === "fixedClock") return; // pin whatever time is currently shown
+    setDraftTime(
+      formatClock(
+        projectMinutes(item.astroMinutes, {
+          mode: next,
+          offsetMin: draftOffset,
+          stepMin: draftStep,
+          fixedClock: null,
+        }),
+      ),
+    );
+  };
+
+  /** ±1 minute nudge on Δuser, kept in step with the visible clock time. */
+  const nudgeDraft = (item: ScheduleItem, delta: number) => {
+    if (draftMode === "fixedClock") {
+      setDraftTime(formatClock((parseClock(draftTime) ?? item.minutes) + delta));
+      return;
+    }
+    const nextOffset = draftOffset + delta;
+    setDraftOffset(nextOffset);
+    setDraftTime(
+      formatClock(
+        projectMinutes(item.astroMinutes, {
+          mode: draftMode,
+          offsetMin: nextOffset,
+          stepMin: draftStep,
+          fixedClock: null,
+        }),
+      ),
+    );
+  };
+
+  const prefFromItem = (
+    item: ScheduleItem,
+    patch: Partial<PrayerPref> = {},
+  ): PrayerPref => {
+    const existing = prefs.find((p) => p.prayerKey === item.key);
+    return {
+      prayerKey: item.key,
+      mode: item.mode,
+      offsetMinutes: item.offsetMinutes,
+      stepMinutes: item.stepMinutes,
+      fixedTime: item.fixedClock,
+      customTime: existing?.customTime ?? null,
+      calibratedAt: item.rule.calibratedAt,
+      reminderEnabled: item.reminder,
+      ...patch,
+    };
   };
 
   const saveEditor = async (item: ScheduleItem, clear = false) => {
+    const existing = prefs.find((p) => p.prayerKey === item.key);
+    const calibratedToday = dateKey(now);
+
+    if (clear) {
+      await onPref({
+        prayerKey: item.key,
+        mode: "dynamicOffset",
+        offsetMinutes: 0,
+        stepMinutes: 0,
+        fixedTime: null,
+        customTime: null,
+        calibratedAt: null,
+        reminderEnabled: item.reminder,
+        reset: true,
+      });
+      setEditing(null);
+      return;
+    }
+
+    if (draftMode === "fixedClock") {
+      const fixed = parseClock(draftTime);
+      if (fixed === null) return;
+      await onPref({
+        prayerKey: item.key,
+        mode: "fixedClock",
+        offsetMinutes: 0,
+        stepMinutes: 0,
+        fixedTime: formatClock(fixed),
+        customTime: existing?.customTime ?? null,
+        calibratedAt: calibratedToday,
+        reminderEnabled: item.reminder,
+      });
+      setEditing(null);
+      return;
+    }
+
+    // If the clock field no longer matches the projection of the stored Δuser,
+    // the user typed a new masjid time: that is a fresh calibration event.
+    const projected = projectMinutes(item.astroMinutes, {
+      mode: draftMode,
+      offsetMin: draftOffset,
+      stepMin: draftStep,
+      fixedClock: null,
+    });
+    const typedRaw = parseClock(draftTime);
+    // Mosque-step mode only ever shows grid times, so snap what was typed
+    // before comparing it with the projection (otherwise a typed 05:17 would
+    // look like a new calibration while the row renders 05:30).
+    const typed =
+      typedRaw !== null && draftMode === "steppedOffset"
+        ? stepJumpMinutes(typedRaw, draftStep)
+        : typedRaw;
+    const retyped = typed !== null && typed !== projected;
+    // A freshly typed time is calibrated now (Δuser = typed − sun today).
+    // Nudges and mode changes keep the existing offset untouched.
+    const offsetMinutes =
+      retyped && typed !== null
+        ? captureOffsetMinutes(typed, item.astroMinutes)
+        : draftOffset;
+
     await onPref({
       prayerKey: item.key,
-      customTime: clear ? null : draftTime || null,
-      offsetMinutes: clear ? 0 : draftOffset,
+      mode: draftMode,
+      offsetMinutes,
+      stepMinutes: draftMode === "steppedOffset" ? draftStep : 0,
+      fixedTime: null,
+      customTime: retyped && typed !== null ? formatClock(typed) : existing?.customTime ?? null,
+      calibratedAt: retyped
+        ? calibratedToday
+        : item.rule.calibratedAt ?? calibratedToday,
       reminderEnabled: item.reminder,
+      recalibrate: retyped,
     });
     setEditing(null);
   };
@@ -202,6 +331,38 @@ export default function IslamicPanel({
           <button type="button" className="press text-xs" onClick={() => setBanner(null)}>
             ✕
           </button>
+        </div>
+      ) : null}
+
+      {timezoneDrift(settings.timezone, detectedTimezone()) && !tzDismissed ? (
+        <div
+          className="fade mb-3 rounded-2xl border px-3 py-2 text-[11px]"
+          style={{ borderColor: "var(--ring)", background: "var(--accent-soft)" }}
+        >
+          <div className="text-xs font-semibold">📍 Your device is in {detectedTimezone()}</div>
+          <div className="mt-0.5" style={{ color: "var(--muted)" }}>
+            Your saved location uses {settings.timezone}. Only the time zone changes — every
+            calibrated offset Δuser stays exactly as it is.
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-2">
+            <Touchable
+              onClick={async () => {
+                await onSettings({ timezone: detectedTimezone() });
+                setTzDismissed(true);
+              }}
+              className="rounded-xl px-2.5 py-1 text-[11px] font-semibold"
+              style={{ background: "var(--accent)", color: "#0b1020" }}
+            >
+              Use {detectedTimezone()}
+            </Touchable>
+            <Touchable
+              onClick={() => setTzDismissed(true)}
+              className="rounded-xl border px-2.5 py-1 text-[11px] font-semibold"
+              style={{ borderColor: "var(--panel-border)" }}
+            >
+              Not now
+            </Touchable>
+          </div>
         </div>
       ) : null}
 
@@ -259,15 +420,9 @@ export default function IslamicPanel({
                         <span className="text-[11px]" dir="rtl" style={{ color: "var(--muted)" }}>
                           {meta.arabic}
                         </span>
-                        {item.custom ? (
+                        {ruleBadge(item.rule) ? (
                           <span className="rounded-full bg-white/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wide">
-                            custom
-                          </span>
-                        ) : null}
-                        {item.offset !== 0 ? (
-                          <span className="rounded-full bg-white/15 px-1.5 py-0.5 text-[9px]">
-                            {item.offset > 0 ? "+" : ""}
-                            {item.offset}m
+                            {ruleBadge(item.rule)}
                           </span>
                         ) : null}
                       </div>
@@ -284,14 +439,7 @@ export default function IslamicPanel({
                           checked={item.reminder}
                           label={`${meta.label} reminder`}
                           onChange={(next) =>
-                            onPref({
-                              prayerKey: item.key,
-                              customTime: item.custom
-                                ? minutesToInputValue(item.minutes - item.offset)
-                                : null,
-                              offsetMinutes: item.offset,
-                              reminderEnabled: next,
-                            })
+                            onPref(prefFromItem(item, { reminderEnabled: next }))
                           }
                         />
                         <Touchable
@@ -310,9 +458,34 @@ export default function IslamicPanel({
 
                   {editing === item.key ? (
                     <div className="fade border-t px-3 py-3" style={{ borderColor: "var(--panel-border)" }}>
-                      <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {TRACKING_MODES.map((m) => (
+                          <Touchable
+                            key={m.id}
+                            onClick={() => changeMode(item, m.id)}
+                            className="rounded-xl border px-2.5 py-1.5 text-[11px] font-semibold"
+                            style={{
+                              borderColor: "var(--panel-border)",
+                              background:
+                                draftMode === m.id ? "var(--accent)" : "rgba(255,255,255,0.07)",
+                              color: draftMode === m.id ? "#0b1020" : "var(--fg)",
+                            }}
+                          >
+                            {m.label}
+                          </Touchable>
+                        ))}
+                      </div>
+                      <p className="mt-1.5 text-[10px]" style={{ color: "var(--muted)" }}>
+                        {TRACKING_MODES.find((m) => m.id === draftMode)?.hint}
+                      </p>
+
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
                         <label className="text-[11px]">
-                          <span style={{ color: "var(--muted)" }}>Custom time (overrides calculation)</span>
+                          <span style={{ color: "var(--muted)" }}>
+                            {draftMode === "fixedClock"
+                              ? "Fixed clock time (never moves)"
+                              : "Your masjid / jamaat time today"}
+                          </span>
                           <input
                             type="time"
                             value={draftTime}
@@ -321,18 +494,82 @@ export default function IslamicPanel({
                             style={{ borderColor: "var(--panel-border)" }}
                           />
                         </label>
-                        <label className="text-[11px]">
-                          <span style={{ color: "var(--muted)" }}>Minute adjustment ({draftOffset}m)</span>
-                          <input
-                            type="range"
-                            min={-30}
-                            max={30}
-                            value={draftOffset}
-                            onChange={(e) => setDraftOffset(Number(e.target.value))}
-                            className="mt-3 w-full accent-[var(--accent)]"
-                          />
-                        </label>
+                        <div className="text-[11px]">
+                          <span style={{ color: "var(--muted)" }}>Calibration</span>
+                          <div
+                            className="mt-1 flex items-center gap-1.5 rounded-xl border px-2 py-1.5"
+                            style={{ borderColor: "var(--panel-border)" }}
+                          >
+                            <span className="truncate font-semibold tabular-nums">
+                              {draftMode === "fixedClock"
+                                ? `fixed ${draftTime || "—"}`
+                                : describeRule(draftRule)}
+                            </span>
+                            <span className="flex-1" />
+                            <Touchable
+                              onClick={() => nudgeDraft(item, -1)}
+                              className="rounded-lg border px-2 py-0.5 text-[11px] font-bold"
+                              style={{ borderColor: "var(--panel-border)" }}
+                              aria-label="Subtract one minute"
+                            >
+                              −1
+                            </Touchable>
+                            <Touchable
+                              onClick={() => nudgeDraft(item, 1)}
+                              className="rounded-lg border px-2 py-0.5 text-[11px] font-bold"
+                              style={{ borderColor: "var(--panel-border)" }}
+                              aria-label="Add one minute"
+                            >
+                              +1
+                            </Touchable>
+                          </div>
+                          <div className="mt-1 leading-relaxed" style={{ color: "var(--muted)" }}>
+                            Sun today {formatClock(item.astroMinutes)}
+                            {draftMode !== "fixedClock" ? (
+                              <>
+                                {" · "}
+                                {draftOffset === 0
+                                  ? "no offset saved"
+                                  : `${draftOffset > 0 ? "+" : "−"}${Math.abs(draftOffset)} min saved`}
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
                       </div>
+
+                      {draftMode === "steppedOffset" ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+                          <span style={{ color: "var(--muted)" }}>Round up in steps of</span>
+                          {STEP_CHOICES.map((step) => (
+                            <Touchable
+                              key={step}
+                              onClick={() => {
+                                setDraftStep(step);
+                                setDraftTime(
+                                  formatClock(
+                                    projectMinutes(item.astroMinutes, {
+                                      mode: "steppedOffset",
+                                      offsetMin: draftOffset,
+                                      stepMin: step,
+                                      fixedClock: null,
+                                    }),
+                                  ),
+                                );
+                              }}
+                              className="rounded-lg border px-2 py-1 font-semibold"
+                              style={{
+                                borderColor: "var(--panel-border)",
+                                background:
+                                  draftStep === step ? "var(--accent)" : "rgba(255,255,255,0.07)",
+                                color: draftStep === step ? "#0b1020" : "var(--fg)",
+                              }}
+                            >
+                              {step} min
+                            </Touchable>
+                          ))}
+                        </div>
+                      ) : null}
+
                       <div className="mt-2 flex gap-2">
                         <Touchable
                           onClick={() => saveEditor(item)}
@@ -367,6 +604,8 @@ export default function IslamicPanel({
             <span>
               {prayerOnly.filter((p) => p.reminder).length}/{prayerOnly.length} reminders armed
             </span>
+            <span aria-hidden>·</span>
+            <span>{calibrationSummary(schedule)}</span>
             {!audioReady ? (
               <Touchable
                 onClick={enableAlerts}
@@ -527,10 +766,30 @@ export default function IslamicPanel({
             ▶️ Test alarm & vibration
           </Touchable>
 
+          <div
+            className="rounded-2xl border px-3 py-2 text-[11px] leading-relaxed"
+            style={{
+              borderColor: "var(--panel-border)",
+              background: "rgba(255,255,255,0.05)",
+              color: "var(--muted)",
+            }}
+          >
+            <strong style={{ color: "var(--fg)" }}>Auto time adjustment</strong> — you never store a fixed
+            clock time. Entering a masjid time once records your offset Δuser against that day&apos;s
+            astronomical baseline; from then on every timer is rebuilt as
+            <em> solar time today + Δuser</em>, so seasonal drift is followed automatically instead of
+            leaving your reminders behind.
+            <div className="mt-1">{calibrationSummary(schedule)}</div>
+            <div className="mt-1">
+              Sun data for {settings.locationName} ({settings.timezone}). Keep this tab open for in-app
+              alarms to fire.
+            </div>
+          </div>
           <p className="text-[11px] leading-relaxed" style={{ color: "var(--muted)" }}>
-            Times are computed astronomically for {settings.locationName} ({settings.timezone}). Tap ✎ on any
-            prayer to set your own masjid jamaat time or nudge it by minutes; the reminder follows your custom
-            time. Keep this tab open for alarms to fire.
+            Tapping ✎ on a prayer offers three tracking modes: <strong>auto</strong> (sun + your
+            offset), <strong>mosque steps</strong> (clean 5/10/15 minute Iqamah board) and{" "}
+            <strong>fixed clock</strong> (Jumu&apos;ah pinned regardless of season). ±1 nudges your
+            saved offset without recalibrating.
           </p>
         </div>
       ) : null}

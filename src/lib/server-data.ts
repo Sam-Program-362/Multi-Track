@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { appSettings, prayerPrefs, worldClocks } from "@/db/schema";
+import { contextFrom, normalizeStoredRule } from "./calibration";
 import type { MethodKey } from "./prayer";
 import type { PrayerPref, Settings, WorldClock } from "./types";
 
@@ -82,15 +83,77 @@ function toClock(row: typeof worldClocks.$inferSelect): WorldClock {
   };
 }
 
-export async function getPrayerPrefs(): Promise<PrayerPref[]> {
+/**
+ * Prayers with their calibration state.
+ *
+ * Rows written before the calibration model existed only carry `customTime`
+ * (a static override). They are upgraded on read: Δuser is recovered from the
+ * old clock time against today's astronomical baseline, so the prayer keeps
+ * showing the user's familiar time today and starts following the sun from
+ * then on (no data loss, no manual re-entry). The derived rule is written
+ * back, otherwise every read would re-pin the time to the entered clock value
+ * and the time would never drift at all.
+ */
+export async function getPrayerPrefs(settings?: Settings): Promise<PrayerPref[]> {
   try {
     const rows = await db.select().from(prayerPrefs);
-    return rows.map((row) => ({
-      prayerKey: row.prayerKey,
-      customTime: row.customTime,
-      offsetMinutes: row.offsetMinutes,
-      reminderEnabled: row.reminderEnabled,
-    }));
+    const ctx = contextFrom(settings ?? (await getSettings()));
+    const now = new Date();
+    const prefs = rows.map((row) => {
+      const rule = normalizeStoredRule(
+        row.prayerKey,
+        {
+          mode: row.mode,
+          offsetMinutes: row.offsetMinutes,
+          stepMinutes: row.stepMinutes,
+          fixedTime: row.fixedTime,
+          customTime: row.customTime,
+          calibratedAt: row.calibratedAt,
+        },
+        ctx,
+        now,
+      );
+      return {
+        pref: {
+          prayerKey: row.prayerKey,
+          mode: rule.mode,
+          offsetMinutes: rule.offsetMin,
+          stepMinutes: rule.stepMin,
+          fixedTime: rule.fixedClock,
+          customTime: row.customTime,
+          calibratedAt: rule.calibratedAt,
+          reminderEnabled: row.reminderEnabled,
+        } satisfies PrayerPref,
+        dirty:
+          rule.calibratedAt !== row.calibratedAt ||
+          rule.offsetMin !== row.offsetMinutes ||
+          rule.mode !== row.mode ||
+          rule.stepMin !== row.stepMinutes ||
+          rule.fixedClock !== row.fixedTime,
+      };
+    });
+
+    // One-time backfill of legacy rows; failures must not break loading.
+    const stale = prefs.filter((entry) => entry.dirty);
+    if (stale.length > 0) {
+      await Promise.all(
+        stale.map((entry) =>
+          db
+            .update(prayerPrefs)
+            .set({
+              mode: entry.pref.mode,
+              offsetMinutes: entry.pref.offsetMinutes,
+              stepMinutes: entry.pref.stepMinutes,
+              fixedTime: entry.pref.fixedTime,
+              calibratedAt: entry.pref.calibratedAt,
+            })
+            .where(eq(prayerPrefs.prayerKey, entry.pref.prayerKey))
+            .catch(() => undefined),
+        ),
+      ).catch(() => undefined);
+    }
+
+    return prefs.map((entry) => entry.pref);
   } catch {
     return [];
   }

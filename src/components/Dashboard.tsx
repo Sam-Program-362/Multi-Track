@@ -15,7 +15,7 @@ import Splash from "./Splash";
 import CalendarPanel from "./CalendarPanel";
 import ClockPanel from "./ClockPanel";
 import WeatherPanel from "./WeatherPanel";
-import IslamicPanel from "./IslamicPanel";
+import IslamicPanel, { type PrayerPrefWriteHints } from "./IslamicPanel";
 import { Touchable } from "./ui";
 import InstallApp from "./InstallApp";
 
@@ -119,10 +119,21 @@ export default function Dashboard({
   );
 
   const savePref = useCallback(
-    async (patch: PrayerPref) => {
+    async (patch: PrayerPref & PrayerPrefWriteHints) => {
+      // Only the stored fields belong in state; the rest are save-time hints.
+      const pref: PrayerPref = {
+        prayerKey: patch.prayerKey,
+        mode: patch.mode,
+        offsetMinutes: patch.offsetMinutes,
+        stepMinutes: patch.stepMinutes,
+        fixedTime: patch.fixedTime,
+        customTime: patch.customTime,
+        calibratedAt: patch.calibratedAt,
+        reminderEnabled: patch.reminderEnabled,
+      };
       setPrefs((prev) => {
-        const rest = prev.filter((p) => p.prayerKey !== patch.prayerKey);
-        return [...rest, patch];
+        const rest = prev.filter((p) => p.prayerKey !== pref.prayerKey);
+        return [...rest, pref];
       });
       try {
         const res = await fetch("/api/prayers", {

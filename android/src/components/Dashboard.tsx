@@ -11,7 +11,7 @@ import {
   toHijri,
 } from "@/lib/calendars";
 import { guessTimezone } from "@/lib/timezones";
-import { buildSchedule } from "./IslamicPanel";
+import { buildSchedule, type PrayerPrefWriteHints } from "./IslamicPanel";
 import {
   addClock as addClockToStorage,
   deleteClock as deleteClockFromStorage,
@@ -140,7 +140,9 @@ export default function Dashboard({
   );
 
   const savePref = useCallback(
-    async (patch: PrayerPref) => {
+    async (patch: PrayerPref & PrayerPrefWriteHints) => {
+      // The offline store keeps the already-resolved rule; the extra
+      // recalibrate/reset hints are save-time only and sanitizePref drops them.
       try {
         setPrefs(await savePrayerPref(patch));
         flash("Prayer time updated");
@@ -157,18 +159,20 @@ export default function Dashboard({
    */
   const reschedule = useCallback(async () => {
     if (!isNative()) return;
-    const today = new Date();
-    const items = buildSchedule(today, settings, prefs).map((item) => ({
-      key: item.key,
-      minutes: item.minutes,
-      enabled: item.reminder,
-    }));
     const count = await schedulePrayerReminders({
       remindersEnabled: settings.remindersEnabled,
       sound: (settings.reminderSound as SoundId) ?? "chime",
       timezone: settings.timezone,
       use24Hour: settings.use24Hour,
-      items,
+      // Each of the next 7 days is projected separately: calibrated times move
+      // with the sun, so repeating today's clock times would drift worst-case
+      // by a couple of minutes per day.
+      itemsForDate: (date) =>
+        buildSchedule(date, settings, prefs).map((item) => ({
+          key: item.key,
+          minutes: item.minutes,
+          enabled: item.reminder,
+        })),
     });
     setScheduledCount(count);
   }, [settings, prefs]);
