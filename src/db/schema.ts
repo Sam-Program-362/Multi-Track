@@ -21,6 +21,10 @@ export const appSettings = pgTable(
     timezone: text("timezone").notNull().default("Asia/Dhaka"),
     method: text("method").notNull().default("Karachi"),
     asrJuristic: text("asr_juristic").notNull().default("Standard"),
+    /** Horizon dip from observer elevation (metres above sea level). */
+    elevationMeters: doublePrecision("elevation_meters").notNull().default(0),
+    /** auto | angle | seventh | middleOfNight | none */
+    highLatitudeRule: text("high_latitude_rule").notNull().default("auto"),
     use24Hour: boolean("use_24_hour").notNull().default(false),
     remindersEnabled: boolean("reminders_enabled").notNull().default(true),
     reminderSound: text("reminder_sound").notNull().default("chime"),
@@ -64,6 +68,14 @@ export const prayerPrefs = pgTable(
     /** Calibration date d0 as "YYYY-MM-DD". */
     calibratedAt: text("calibrated_at"),
     reminderEnabled: boolean("reminder_enabled").notNull().default(true),
+    /**
+     * Mosque jamaat policy as JSON (`IqaamahRule`). Deliberately separate from
+     * the azan rule above: congregation times are scheduling policy, not
+     * astronomy, and correcting one must never move the other.
+     */
+    iqamah: text("iqamah"),
+    /** "azan" | "iqamah" — which time the reminder follows. */
+    reminderAt: text("reminder_at").notNull().default("azan"),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [uniqueIndex("prayer_prefs_key_idx").on(table.prayerKey)],

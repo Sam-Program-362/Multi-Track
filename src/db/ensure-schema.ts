@@ -22,11 +22,18 @@ export function ensurePrayerCalibrationSchema(): Promise<boolean> {
   if (!schemaReady) {
     schemaReady = (async () => {
       await db.execute(sql`
+        ALTER TABLE app_settings
+          ADD COLUMN IF NOT EXISTS elevation_meters double precision NOT NULL DEFAULT 0,
+          ADD COLUMN IF NOT EXISTS high_latitude_rule text NOT NULL DEFAULT 'auto'
+      `);
+      await db.execute(sql`
         ALTER TABLE prayer_prefs
           ADD COLUMN IF NOT EXISTS mode text NOT NULL DEFAULT 'dynamicOffset',
           ADD COLUMN IF NOT EXISTS step_minutes integer NOT NULL DEFAULT 0,
           ADD COLUMN IF NOT EXISTS fixed_time text,
-          ADD COLUMN IF NOT EXISTS calibrated_at text
+          ADD COLUMN IF NOT EXISTS calibrated_at text,
+          ADD COLUMN IF NOT EXISTS iqamah text,
+          ADD COLUMN IF NOT EXISTS reminder_at text NOT NULL DEFAULT 'azan'
       `);
       return true;
     })().catch(() => false);

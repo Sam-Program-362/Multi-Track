@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { appSettings } from "@/db/schema";
 import { getSettings } from "@/lib/server-data";
 import { METHODS, type MethodKey } from "@/lib/prayer";
+import { HIGH_LATITUDE_CHOICES } from "@/lib/calibration";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,15 @@ export async function PUT(request: Request) {
   }
   if (body.asrJuristic === "Hanafi" || body.asrJuristic === "Standard") {
     patch.asrJuristic = body.asrJuristic;
+  }
+  if (typeof body.elevationMeters === "number" && Number.isFinite(body.elevationMeters)) {
+    patch.elevationMeters = Math.max(0, Math.min(4000, Math.round(body.elevationMeters)));
+  }
+  if (
+    typeof body.highLatitudeRule === "string" &&
+    HIGH_LATITUDE_CHOICES.some((choice) => choice.id === body.highLatitudeRule)
+  ) {
+    patch.highLatitudeRule = body.highLatitudeRule;
   }
   if (typeof body.use24Hour === "boolean") patch.use24Hour = body.use24Hour;
   if (typeof body.remindersEnabled === "boolean") {

@@ -2,8 +2,13 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { ensurePrayerCalibrationSchema } from "@/db/ensure-schema";
 import { appSettings, prayerPrefs, worldClocks } from "@/db/schema";
-import { contextFrom, normalizeStoredRule } from "./calibration";
-import type { MethodKey } from "./prayer";
+import {
+  contextFrom,
+  normalizeIqamah,
+  normalizeStoredRule,
+  sanitizeReminderTarget,
+} from "./calibration";
+import type { HighLatitudeRule, MethodKey } from "./prayer";
 import type { PrayerPref, Settings, WorldClock } from "./types";
 
 const DEFAULT_SETTINGS: Settings = {
@@ -14,6 +19,8 @@ const DEFAULT_SETTINGS: Settings = {
   timezone: "Asia/Dhaka",
   method: "Karachi",
   asrJuristic: "Standard",
+  elevationMeters: 0,
+  highLatitudeRule: "auto",
   use24Hour: false,
   remindersEnabled: true,
   reminderSound: "chime",
@@ -48,6 +55,8 @@ function rowToSettings(row: typeof appSettings.$inferSelect): Settings {
     timezone: row.timezone,
     method: row.method as MethodKey,
     asrJuristic: row.asrJuristic === "Hanafi" ? "Hanafi" : "Standard",
+    elevationMeters: Number.isFinite(row.elevationMeters) ? row.elevationMeters : 0,
+    highLatitudeRule: (row.highLatitudeRule as HighLatitudeRule) ?? "auto",
     use24Hour: row.use24Hour,
     remindersEnabled: row.remindersEnabled,
     reminderSound: row.reminderSound,
@@ -102,6 +111,10 @@ export async function getPrayerPrefs(settings?: Settings): Promise<PrayerPref[]>
     const ctx = contextFrom(settings ?? (await getSettings()));
     const now = new Date();
     const prefs = rows.map((row) => {
+      const iqamah = normalizeIqamah(row.iqamah);
+      // Canonical form, so a hand-edited or legacy row is rewritten once.
+      const iqamahText = JSON.stringify(iqamah);
+      const reminderAt = sanitizeReminderTarget(row.reminderAt);
       const rule = normalizeStoredRule(
         row.prayerKey,
         {
@@ -125,13 +138,17 @@ export async function getPrayerPrefs(settings?: Settings): Promise<PrayerPref[]>
           customTime: row.customTime,
           calibratedAt: rule.calibratedAt,
           reminderEnabled: row.reminderEnabled,
+          iqamah,
+          reminderAt,
         } satisfies PrayerPref,
         dirty:
           rule.calibratedAt !== row.calibratedAt ||
           rule.offsetMin !== row.offsetMinutes ||
           rule.mode !== row.mode ||
           rule.stepMin !== row.stepMinutes ||
-          rule.fixedClock !== row.fixedTime,
+          rule.fixedClock !== row.fixedTime ||
+          iqamahText !== (row.iqamah ?? null) ||
+          reminderAt !== row.reminderAt,
       };
     });
 
@@ -148,6 +165,8 @@ export async function getPrayerPrefs(settings?: Settings): Promise<PrayerPref[]>
               stepMinutes: entry.pref.stepMinutes,
               fixedTime: entry.pref.fixedTime,
               calibratedAt: entry.pref.calibratedAt,
+              iqamah: JSON.stringify(entry.pref.iqamah),
+              reminderAt: entry.pref.reminderAt,
             })
             .where(eq(prayerPrefs.prayerKey, entry.pref.prayerKey))
             .catch(() => undefined),

@@ -36,6 +36,16 @@ Tfinal(p, d) = Tastro(p, d) + Δuser(p)              # every later day d
 Because `Tastro` is evaluated with the timezone offset in force on that date, a DST
 change moves every timer by an hour while `Δuser` stays untouched.
 
+### Two independent decisions per prayer
+
+1. **Azan** — when the prayer *begins*: astronomy (`Tastro`) plus the user's `Δuser`.
+2. **Jamaat / Iqamah** — when the *congregation* is called: mosque policy, stored separately.
+
+Keeping them apart is deliberate. A congregation delay is not an astronomical correction; if it
+were folded into `Δuser`, editing the jamaat time would silently move the azan (and the
+reminder, and the seasonal projection). The engine computes the azan first, then resolves the
+jamaat from its own rule.
+
 ### Three tracking modes (per prayer)
 
 | Mode | Formula | Use case |
@@ -46,6 +56,24 @@ change moves every timer by an hour while `Δuser` stays untouched.
 
 `S` is stored per prayer; a calibrated time that drifts between 05:01 and 05:15 stays
 displayed as 05:15 and jumps to 05:30 on the first day it would reach 05:16.
+
+### Jamaat (congregation) modes
+
+| Mode | Meaning | Where the time comes from |
+| --- | --- | --- |
+| `none` | the mosque publishes no jamaat | nothing is displayed or reminded |
+| `delay` | constant "N minutes after the azan" | azan + N, moves with the sun all year |
+| `clock` | same clock time daily, e.g. 13:30 | a stored `"HH:mm"` |
+| `table` | dated seasonal entries from the mosque board | newest entry with `from ≤ date`; the earliest entry also covers dates before it |
+
+A `table` row may carry either a clock time or a delay, so a mosque that says "jamaat +20 minutes
+in Ramadan, 13:45 from April" can be described exactly. Rows are validated and sorted on write,
+duplicates on the same effective date keep the last value the user entered, and a table with no
+usable entries resolves to *nothing* rather than a guessed time.
+
+**No inference from a single sample.** One entered jamaat time becomes a `clock` (or `delay`)
+rule. The app never fits a seasonal curve to one data point; it says so in the editor and offers
+the table for mosques whose board changes through the year.
 
 ## Module map
 
@@ -82,6 +110,10 @@ displayed as 05:15 and jumps to 05:30 on the first day it would reach 05:16.
 | `stepJumpMinutes(minutes, S)` | Ceiling quantisation |
 | `normalizeStoredRule(key, raw, ctx, date)` | Validate stored data **and upgrade legacy rows** |
 | `buildSchedule(date, settings, prefs)` | The single schedule used by the panel, the in-app reminder engine and the Android notification scheduler |
+| `normalizeIqamah(raw)` | Validate/repair stored jamaat policy (JSON, legacy `null`, hand-edited rows) |
+| `resolveIqamah(azan, rule, date)` | Jamaat minute for a date from the stored policy |
+| `describeIqamah` / `describeScheduleItem` | Shared wording so web and Android explain a time identically |
+| `HIGH_LATITUDE_CHOICES` | The five user-selectable conventions |
 | `estimateLongitudeDegrees(tz, date)` | No-GPS meridian fallback `λ ≈ Zstd × 15°` |
 | `zoneOffsetForDate(date, tz)` | Offset sampled at 12:00 UTC, so DST switch days are correct |
 | `timezoneDrift(stored, detected)` | Travel detector for the UI prompt |
@@ -90,7 +122,7 @@ displayed as 05:15 and jumps to 05:30 on the first day it would reach 05:16.
 
 ### Next.js app (PostgreSQL via Drizzle)
 
-`prayer_prefs` gained four columns (see `docs/migrations/2026-11-15-prayer-calibration.sql`):
+`prayer_prefs` gained six columns (see `docs/migrations/2026-11-15-prayer-calibration.sql`):
 
 | Column | Type | Meaning |
 | --- | --- | --- |
@@ -98,6 +130,12 @@ displayed as 05:15 and jumps to 05:30 on the first day it would reach 05:16.
 | `step_minutes` | `integer not null default 0` | `S`, 0 = off |
 | `fixed_time` | `text` | `"HH:mm"` for `fixedClock` |
 | `calibrated_at` | `text` | calibration date `d0` as `"YYYY-MM-DD"` |
+| `iqamah` | `text` | validated JSON jamaat policy (separate from the azan rule) |
+| `reminder_at` | `text not null default 'azan'` | remind at `azan` or `iqamah` |
+
+`app_settings` gained `elevation_meters` (`double precision`, default 0) and
+`high_latitude_rule` (`text`, default `'auto'`). Both are additive with defaults, so existing
+rows — including every row written before this branch — are valid without a backfill.
 
 `offset_minutes` keeps holding Δuser and `custom_time` is kept only as an audit trail of
 the clock time the user typed — it never drives scheduling.
@@ -120,8 +158,20 @@ you can still apply them explicitly with `npx drizzle-kit push` or the SQL file.
 // pin Jumu'ah
 { "prayerKey": "dhuhr", "mode": "fixedClock", "fixedTime": "13:30" }
 
-// back to pure astronomy
+// back to pure astronomy (the mosque policy is kept)
 { "prayerKey": "fajr", "mode": "dynamicOffset", "offsetMinutes": 0, "reset": true }
+
+// mosque jamaat policy: a constant 15 minutes after the azan
+{ "prayerKey": "fajr", "iqamah": { "mode": "delay", "delayMin": 15 }, "reminderAt": "iqamah" }
+
+// mosque jamaat policy: dated seasonal board entries
+{ "prayerKey": "dhuhr", "iqamah": { "mode": "table", "table": [
+    { "from": "2026-01-01", "clock": "13:30" },
+    { "from": "2026-04-01", "clock": "13:45" }
+  ] } }
+
+// forget the jamaat configuration for this prayer
+{ "prayerKey": "dhuhr", "resetIqamah": true }
 ```
 
 Anything not sent keeps its stored value. `recalibrate: true` is what distinguishes a
@@ -129,19 +179,31 @@ calibration event from the audit-only `customTime`.
 
 ### Android app (device storage)
 
-`android/src/lib/storage.ts` is at `STORAGE_VERSION = 2`. v1 prayer preferences held a
-static `customTime`; `migrate()` converts each one into a proper Δuser rule and rewrites
-the payload, so the familiar time is preserved today and starts following the sun
-tomorrow. The same lazy backfill happens server-side in `getPrayerPrefs()`, because
-otherwise every read would re-pin the old time to "today" and the drift would never
-happen.
+`android/src/lib/storage.ts` is at `STORAGE_VERSION = 3`. Migration is additive and one-shot:
+
+* **v1 → v3**: a static `customTime` becomes a real Δuser rule, measured against the
+  astronomical baseline of the migration day; a pinned `fixedClock` row gets a configuration
+  date. The payload is rewritten immediately, so the recovered offset is not re-derived on every
+  launch (which would pin the time in place).
+* **v2 → v3**: every stored calibration is preserved byte-for-byte; `iqamah` defaults to "no
+  jamaat" and `reminderAt` to `"azan"`.
+* **Unknown future version**: values are re-validated and kept, never wiped.
+* Invalid prayer rows are dropped individually; the rest survive. Corrupt JSON falls back to
+  defaults instead of crashing the app.
+
+The same lazy backfill happens server-side in `getPrayerPrefs()`, because otherwise every read
+would re-pin the old time to "today" and the drift would never happen.
 
 ## UI (`IslamicPanel.tsx`)
 
 * **Calibration badge** per row — `auto · Δ+23m`, `steps of 10m`, `fixed 13:30`.
-* **Editor** — mode chips, the masjid time field ("your masjid / jamaat time today"),
-  a calibration chip showing the live rule, `−1`/`+1` nudges on Δuser, 5/10/15 minute
-  step chips, and a "Sun today 04:55" hint so the entered time is always explainable.
+* **Row** — azan time large, jamaat time underneath when the mosque publishes one.
+* **Editor, azan section** — mode chips, the masjid azan time field, a calibration chip showing
+  the live rule, `−1`/`+1` nudges on Δuser, 5/10/15 minute step chips, and a "Sun today 04:55"
+  hint so the entered time is always explainable.
+* **Editor, jamaat section** — four policy chips (none / after azan / fixed clock / seasonal
+  table), a live preview `azan 05:18 · +15m → jamaat 05:33`, a table editor with an editable date
+  and time per row, and a per-prayer "remind me at Azan / Jamaat" choice.
 * **Save semantics** — if the clock field still matches the projection of the stored
   Δuser, only the offset/mode is saved; if the user typed a new time, that becomes a
   fresh calibration event (`customTime` + `recalibrate`).
@@ -160,15 +222,29 @@ matters precisely because these are exact-minute alarms.
 
 ## Verifying the maths
 
-The astronomical baseline and the calibration algebra were checked against the report's
-worked example and a set of invariants (Dhaka, London DST switch, Tromsø polar day,
-midnight wrap, step quantisation, fixed clock, legacy migration):
+`npm test` runs 231 assertions in `tests/` (Vitest):
+
+| File | What it proves |
+| --- | --- |
+| `tests/prayer-math.test.ts` | ±2 min agreement with the independent `adhan` implementation for 7 cities × 4 dates × 5 authorities (max observed: sunrise 0, dhuhr 1, asr 1, maghrib 1 min), rule-for-rule high-latitude agreement, Asr shadow factors, Umm al-Qura Ramadan Isha, elevation dip, full-year ordering/finiteness, polar day |
+| `tests/calibration.test.ts` | Δuser capture/wrap/clamp, seasonal projection, DST, step boundaries and midnight wrap, legacy row recovery, jamaat delay/clock/table resolution (including before the first entry and duplicate dates), azan↔jamaat independence, reminder targeting |
+| `tests/prayer-write.test.ts` | The pure `PUT /api/prayers` decision: recalibrate vs nudge vs fixed clock vs reset, jamaat validation, partial updates, legacy upgrades, invalid input rejection |
+| `tests/android-store.test.ts` | v1→v3 and v2→v3 device migrations against an in-memory Capacitor Preferences, unknown future versions, corrupt payloads, policy-preserving saves |
+| `tests/parity.test.ts` | `prayer.ts`, `calibration.ts`, `timezones.ts`, `calendars.ts`, `islamicEvents.ts` are byte-identical in both apps, and `PrayerPref` has the same shape |
+
+Worked values used as fixtures:
 
 ```
 Dhaka 2026-11-15  Fajr 04:55  Sunrise 06:13  Dhuhr 11:44  Asr 14:51  Maghrib 17:13  Isha 18:31
-Fajr entered 05:25 → Δuser +30 → 30 days later the timer moves with the sun automatically
+Fajr entered 05:18 → Δuser +23 → 2026-12-15 05:35 (sun moved, offset did not)
 London Dhuhr 28 Mar 12:07 → 29 Mar 13:06 (DST), Δuser unchanged
 Tromsø 21 Jun: Fajr/Isha collapse onto sunrise/sunset (no night to divide)
+Makkah Ramadan: Isha = Maghrib + 120 min instead of 90
+steps S=15: 05:01→05:15, 05:15→05:15, 05:16→05:30
 ```
 
-`npm run typecheck` and `npm run build` pass for both the root app and `android/`.
+`npm run typecheck`, `npm run test` and `npm run build` pass for the root app; `npm run
+typecheck` and `npm run build` pass in `android/`. `npm run lint` reports the same 14
+pre-existing errors on `main` (React hook dependency style in panels that predate this work)
+and none in the files added or changed here.
+

@@ -30,3 +30,33 @@ COMMENT ON COLUMN prayer_prefs.custom_time IS 'Audit trail only - the clock time
 -- Optional: how many rows were written before the calibration model existed.
 -- (Leave them alone; the app upgrades them on first read.)
 -- SELECT count(*) FROM prayer_prefs WHERE custom_time IS NOT NULL AND calibrated_at IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- 2026-11-15 (second pass): mosque jamaat policy, reminder target, settings
+-- ---------------------------------------------------------------------------
+-- All statements are additive with defaults. Nothing is dropped, renamed or
+-- rewritten, so a rolling deploy (old code + new schema, or new code + old
+-- schema) keeps working and existing preferences stay intact.
+
+ALTER TABLE prayer_prefs
+  ADD COLUMN IF NOT EXISTS iqamah text,
+  ADD COLUMN IF NOT EXISTS reminder_at text NOT NULL DEFAULT 'azan';
+
+COMMENT ON COLUMN prayer_prefs.iqamah IS
+  'Validated JSON jamaat policy: {mode:none|delay|clock|table, delayMin, clock, table[]}. Mosque policy, never applied to the azan.';
+COMMENT ON COLUMN prayer_prefs.reminder_at IS
+  'azan | iqamah — which time the reminder follows';
+
+ALTER TABLE app_settings
+  ADD COLUMN IF NOT EXISTS elevation_meters double precision NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS high_latitude_rule text NOT NULL DEFAULT 'auto';
+
+COMMENT ON COLUMN app_settings.elevation_meters IS
+  'Observer height above sea level, used for the apparent-horizon dip';
+COMMENT ON COLUMN app_settings.high_latitude_rule IS
+  'auto | angle | seventh | middleOfNight | none — twilight fallback when the angle is unreachable';
+
+-- Rows written before this migration are valid as-is:
+--   * iqamah is NULL  -> normalised to "no jamaat" on read;
+--   * reminder_at defaults to 'azan';
+--   * elevation 0 / high-latitude 'auto' reproduce the previous behaviour exactly.
