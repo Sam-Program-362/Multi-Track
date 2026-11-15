@@ -221,11 +221,17 @@ export async function schedulePrayerReminders(options: {
   sound: SoundId;
   timezone: string;
   use24Hour: boolean;
-  items: ReminderItem[];
+  /** Same times every day (legacy). Prefer `itemsForDate`. */
+  items?: ReminderItem[];
+  /**
+   * Compute the times for one calendar date. Calibrated schedules move with
+   * the sun, so every one of the next 7 days needs its own projection.
+   */
+  itemsForDate?: (date: Date) => ReminderItem[];
 }): Promise<number> {
   if (!isNative()) return 0;
 
-  const { remindersEnabled, sound, timezone, use24Hour, items } = options;
+  const { remindersEnabled, sound, timezone, use24Hour, items, itemsForDate } = options;
 
   try {
     await LocalNotifications.cancelAll();
@@ -235,8 +241,7 @@ export async function schedulePrayerReminders(options: {
   if (!remindersEnabled) return 0;
 
   const channelId = await ensureNotificationChannel(sound);
-  const active = items.filter((item) => item.enabled && PRAYER_META[item.key].isPrayer);
-  if (active.length === 0) return 0;
+  if (!itemsForDate && (!items || items.length === 0)) return 0;
 
   const now = Date.now();
   const notifications: LocalNotificationSchema[] = [];
@@ -244,6 +249,8 @@ export async function schedulePrayerReminders(options: {
   for (let day = 0; day < REMINDER_HORIZON_DAYS; day += 1) {
     const date = new Date();
     date.setDate(date.getDate() + day);
+    const dayItems = itemsForDate ? itemsForDate(date) : items ?? [];
+    const active = dayItems.filter((item) => item.enabled && PRAYER_META[item.key].isPrayer);
     active.forEach((item, index) => {
       const at = zonedTimeToDate(date, timezone, item.minutes);
       if (at.getTime() <= now) return;
