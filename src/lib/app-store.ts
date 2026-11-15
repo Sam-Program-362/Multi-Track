@@ -173,6 +173,17 @@ export type PrayerPrefsLoad = {
   migrated: number;
   notice: string | null;
   canMigrate: boolean;
+  /**
+   * True only when the stored prayer rows were actually returned by the
+   * database — an empty list counts — **and** the settings used to interpret
+   * them are the user's own.
+   *
+   * Deliberately independent of `notice`: a failed upgrade/backfill *write* is
+   * reported but leaves the rows that were read perfectly usable, so it must
+   * not hide the schedule. A failed *read* is a different failure and clears
+   * this flag.
+   */
+  prefsReadSuccessfully: boolean;
 };
 
 /**
@@ -194,6 +205,8 @@ export async function loadPrayerPrefs(
       migrated: 0,
       notice: snapshot.notice ?? "Database schema is not ready.",
       canMigrate: false,
+      // Nothing can be read before the columns exist.
+      prefsReadSuccessfully: false,
     };
   }
 
@@ -209,6 +222,9 @@ export async function loadPrayerPrefs(
       migrated: 0,
       notice: `Prayer preferences could not be read (${detail}).`,
       canMigrate: false,
+      // The stored rows never arrived: whatever the calendar computes from
+      // here is not the user's own schedule.
+      prefsReadSuccessfully: false,
     };
   }
 
@@ -294,8 +310,12 @@ export async function loadPrayerPrefs(
   return {
     prefs: entries.map((entry) => entry.pref),
     migrated,
+    // A backfill/upgrade warning, not a read failure.
     notice,
     canMigrate,
+    // Reached only after `readPrayerRows()` resolved; `canMigrate` is exactly
+    // "the settings are the user's own", so an empty result stays verified.
+    prefsReadSuccessfully: canMigrate,
   };
 }
 
@@ -305,10 +325,13 @@ export type HomeData = {
   notice: string | null;
   schemaOk: boolean;
   /**
-   * True only when the settings used for this render were read from the
-   * database, i.e. the derived prayer schedule may be treated as the user's.
-   * When false the UI must not show calculated prayer times and must not fire
-   * reminders; stored preferences and calibration are left untouched.
+   * True only when **both** halves of the schedule were actually retrieved:
+   * the settings row the times are computed from, and the stored prayer
+   * preferences/calibration that adjust it. When false the UI must not show
+   * calculated prayer times and must not fire reminders; stored preferences and
+   * calibration are left untouched.
+   *
+   * A failed backfill *write* does not clear this (see `prefsReadSuccessfully`).
    */
   scheduleVerified: boolean;
 };
@@ -325,6 +348,9 @@ export async function loadHomeData(store: AppStore): Promise<HomeData> {
     prefs: prayerLoad.prefs,
     notice: snapshot.notice ?? prayerLoad.notice,
     schemaOk: snapshot.schema.ok,
-    scheduleVerified: snapshot.fromDatabase && snapshot.notice === null,
+    scheduleVerified:
+      snapshot.fromDatabase &&
+      snapshot.notice === null &&
+      prayerLoad.prefsReadSuccessfully,
   };
 }

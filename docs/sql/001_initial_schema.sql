@@ -12,7 +12,13 @@
 --   * The whole file runs in one transaction: if any statement fails, nothing
 --     is applied (COMMIT is never reached).
 --   * It only creates tables that do not exist yet and adds columns that are
---     missing from tables that do exist. Existing rows are untouched.
+--     missing from tables that do exist.
+--   * Columns are *never* redefined. Values already stored in existing columns
+--     are never modified.
+--   * A newly added column carries its DEFAULT: PostgreSQL stores that default
+--     as the column definition, so pre-existing rows immediately *read* the
+--     default value in the new column. That is additive by nature (the column
+--     did not exist before), and it never overwrites a stored value.
 --   * It is compatible with the app's self-healing mechanism
 --     (src/db/ensure-schema.ts), which re-applies the same column additions
 --     with ADD COLUMN IF NOT EXISTS on first prayer read/write.
@@ -76,9 +82,13 @@ CREATE TABLE IF NOT EXISTS public.world_clocks (
   created_at  timestamp without time zone NOT NULL DEFAULT now()
 );
 
+-- `label` and `timezone` are deliberately absent here: in `src/db/schema.ts`
+-- they are NOT NULL *without* a default, and a column like that can only be
+-- added to an empty table. A fresh database gets them from CREATE TABLE above;
+-- every database this app has ever shipped already has them. Inventing
+-- defaults for them here would make an upgraded database differ from a freshly
+-- created one, which is exactly the drift this file exists to prevent.
 ALTER TABLE public.world_clocks
-  ADD COLUMN IF NOT EXISTS label      text             NOT NULL DEFAULT '',
-  ADD COLUMN IF NOT EXISTS timezone   text             NOT NULL DEFAULT 'UTC',
   ADD COLUMN IF NOT EXISTS accent     text             NOT NULL DEFAULT 'cyan',
   ADD COLUMN IF NOT EXISTS sort_order integer          NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS created_at timestamp without time zone NOT NULL DEFAULT now();

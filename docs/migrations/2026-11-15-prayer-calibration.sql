@@ -60,3 +60,9 @@ COMMENT ON COLUMN app_settings.high_latitude_rule IS
 --   * iqamah is NULL  -> normalised to "no jamaat" on read;
 --   * reminder_at defaults to 'azan';
 --   * elevation 0 / high-latitude 'auto' reproduce the previous behaviour exactly.
+--
+-- How existing rows are affected: the new columns are added WITH their defaults,
+-- so PostgreSQL stores the default in the column definition and pre-existing rows
+-- read it there (mode 'dynamicOffset', step 0, reminder_at 'azan', elevation 0,
+-- high_latitude_rule 'auto'). That is the intended starting state, and it is
+-- additive: no value in an existing column is read back, rewritten or dropped.

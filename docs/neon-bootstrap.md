@@ -86,10 +86,23 @@ FROM app_settings;              -- exactly one row, profile = 'default'
 
 * No `DROP`, `TRUNCATE`, `DELETE` or `ALTER ... DROP COLUMN`.
 * No table or column renames.
-* No writes to existing rows: only the singleton `app_settings` row is inserted, and only when
-  no `default` row exists.
+* No modification of stored values. The only `INSERT` is the singleton `app_settings` row, and
+  only when no `default` row exists.
+* No redesign of existing columns. A *new* column is added together with its `DEFAULT`, so
+  pre-existing rows immediately read that default in the new column — that is unavoidable and
+  harmless, because the column did not exist before. Values already stored in existing columns
+  are never read-modified-written and must remain exactly as they were.
 * No changes outside the `public` schema — `neon_auth` (Neon Auth) is untouched.
 * If any statement fails, the transaction rolls back and nothing is applied.
+
+### What happens to existing rows
+
+| Situation | Effect on stored data |
+| --- | --- |
+| Table missing entirely | Created empty; one seeded settings row is added |
+| Table exists, a *new* column is missing | Column added with its `DEFAULT`; existing rows read that default in the new column, everything else is unchanged |
+| Table exists, column already present | `ADD COLUMN IF NOT EXISTS` is a no-op; the stored values are not touched |
+| Row already exists | Nothing is updated; the seed `INSERT` does not run |
 
 ### After it is applied
 

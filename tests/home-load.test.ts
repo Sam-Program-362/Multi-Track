@@ -16,7 +16,7 @@ import {
   dateKey,
   parseClock,
 } from "../src/lib/calibration";
-import { visiblePrayerSchedule } from "../src/lib/prayer-visibility";
+import { reminderPrayers, visiblePrayerSchedule } from "../src/lib/prayer-visibility";
 
 /**
  * Reproduces the initial home-page loading sequence against an **old database**:
@@ -80,6 +80,7 @@ class FakeOldDatabase implements AppStore {
   columnsReady = false;
   schemaFailures = 0;
   settingsReadError: string | null = null;
+  prayerReadError: string | null = null;
   settingsWriteError: string | null = null;
   settingsRow: SettingsRow | null;
   prefsRows: PrayerRow[];
@@ -120,6 +121,7 @@ class FakeOldDatabase implements AppStore {
   async readPrayerRows() {
     this.calls.push("readPrayerRows");
     if (!this.columnsReady) throw new Error('column "iqamah" does not exist');
+    if (this.prayerReadError) throw new Error(this.prayerReadError);
     return this.prefsRows.map((row) => ({ ...row }));
   }
 
@@ -321,6 +323,9 @@ describe("settings unavailable while the schema is fine", () => {
     db.settingsWriteError = "deadlock detected";
     const failed = await loadHomeData(db);
     expect(failed.notice).toContain("could not be upgraded");
+    // A failed backfill *write* is not a failed read: the rows that were read
+    // are perfectly usable, so the schedule stays verified and visible.
+    expect(failed.scheduleVerified).toBe(true);
 
     db.settingsWriteError = null;
     const retried = await loadHomeData(db);
@@ -384,6 +389,66 @@ describe("degraded rendering contract", () => {
   });
 });
 
+describe("prayer preferences unavailable while the settings are readable", () => {
+  it("withholds the schedule, schedules no reminders and writes nothing", async () => {
+    // The settings row is read successfully; only the prayer-preference read
+    // fails. Whatever the calendar computes here is not the user's own
+    // schedule, so it must not be presented or armed.
+    db.prayerReadError = "connection terminated unexpectedly";
+    const storedBefore = structuredClone(db.prefsRows);
+
+    const home = await loadHomeData(db);
+
+    // Settings really were retrieved — this is not a settings failure.
+    expect(home.settings.locationName).toBe("London, UK");
+    expect(home.settings.latitude).toBe(51.5074);
+    expect(home.scheduleVerified).toBe(false);
+    expect(home.notice).toContain("Prayer preferences could not be read");
+
+    // Nothing is rendered, even though a schedule could be computed.
+    const computed = buildSchedule(new Date(), home.settings, home.prefs);
+    expect(visiblePrayerSchedule(computed, home.scheduleVerified)).toEqual([]);
+    // ...and no time-sensitive reminder can be scheduled from it.
+    expect(reminderPrayers(computed, home.scheduleVerified)).toEqual([]);
+
+    // No migration/backfill write is attempted and nothing stored is changed.
+    expect(db.updates).toHaveLength(0);
+    expect(db.prefsRows).toEqual(storedBefore);
+    expect(db.calls).not.toContain("update:fajr");
+    expect(db.calls).not.toContain("update:dhuhr");
+    expect(home.prefs).toEqual([]);
+  });
+
+  it("restores the verified schedule, with the user's calibration, once the read recovers", async () => {
+    db.prayerReadError = "connection terminated unexpectedly";
+    expect((await loadHomeData(db)).scheduleVerified).toBe(false);
+
+    db.prayerReadError = null;
+    const healthy = await loadHomeData(db);
+    expect(healthy.scheduleVerified).toBe(true);
+    expect(healthy.notice).toBeNull();
+
+    const rendered = visiblePrayerSchedule(
+      buildSchedule(new Date(), healthy.settings, healthy.prefs),
+      healthy.scheduleVerified,
+    );
+    expect(rendered.length).toBeGreaterThan(0);
+    // The stored calibration is applied again: Δuser comes from the user's own
+    // settings, not from the Dhaka fallback.
+    const fajr = healthy.prefs.find((p) => p.prayerKey === "fajr")!;
+    expect(fajr.offsetMinutes).toBe(expectedOffset("fajr", "05:40"));
+    expect(fajr.offsetMinutes).not.toBe(dhakaOffset("fajr", "05:40"));
+  });
+
+  it("leaves an empty but successful read verified", async () => {
+    db.prefsRows = [];
+    const home = await loadHomeData(db);
+    // Empty is a successful read, not a failure.
+    expect(home.scheduleVerified).toBe(true);
+    expect(home.prefs).toEqual([]);
+  });
+});
+
 describe("individual loaders keep the same guarantees", () => {
   it("loadPrayerPrefs refuses to migrate without a database-backed snapshot", async () => {
     db.columnsReady = true;
@@ -397,6 +462,9 @@ describe("individual loaders keep the same guarantees", () => {
     };
     const load = await loadPrayerPrefs(db, untrusted);
     expect(load.canMigrate).toBe(false);
+    // Settings that are not the user's own mean the rows cannot be trusted
+    // either, even though the read itself succeeded.
+    expect(load.prefsReadSuccessfully).toBe(false);
     expect(db.updates).toHaveLength(0);
     expect(load.prefs.find((p) => p.prayerKey === "dhuhr")!.calibratedAt).toBeNull();
   });
