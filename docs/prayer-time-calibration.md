@@ -102,7 +102,11 @@ displayed as 05:15 and jumps to 05:30 on the first day it would reach 05:16.
 `offset_minutes` keeps holding Δuser and `custom_time` is kept only as an audit trail of
 the clock time the user typed — it never drives scheduling.
 
-Apply the migration with your normal flow (`npx drizzle-kit push`, or run the SQL file).
+`src/db/ensure-schema.ts` runs the same `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
+statements once per process before the first prayer read/write, so a deploy against a
+database that was created before this feature keeps working without a separate migration
+step (this repository has no migration runner on Vercel). The statements are idempotent;
+you can still apply them explicitly with `npx drizzle-kit push` or the SQL file.
 
 `PUT /api/prayers` accepts a partial rule:
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
+import { ensurePrayerCalibrationSchema } from "@/db/ensure-schema";
 import { prayerPrefs } from "@/db/schema";
 import { getPrayerPrefs, getSettings } from "@/lib/server-data";
 import { PRAYER_ORDER, type PrayerKey } from "@/lib/prayer";
@@ -51,6 +52,9 @@ export async function PUT(request: Request) {
   if (!(PRAYER_ORDER as string[]).includes(key)) {
     return NextResponse.json({ error: "Unknown prayer key" }, { status: 400 });
   }
+
+  // Make sure the calibration columns exist before reading or writing them.
+  await ensurePrayerCalibrationSchema();
 
   const ctx = contextFrom(await getSettings());
   const [existing] = await db

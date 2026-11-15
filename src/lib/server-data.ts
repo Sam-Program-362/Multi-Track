@@ -1,5 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
+import { ensurePrayerCalibrationSchema } from "@/db/ensure-schema";
 import { appSettings, prayerPrefs, worldClocks } from "@/db/schema";
 import { contextFrom, normalizeStoredRule } from "./calibration";
 import type { MethodKey } from "./prayer";
@@ -96,6 +97,7 @@ function toClock(row: typeof worldClocks.$inferSelect): WorldClock {
  */
 export async function getPrayerPrefs(settings?: Settings): Promise<PrayerPref[]> {
   try {
+    await ensurePrayerCalibrationSchema();
     const rows = await db.select().from(prayerPrefs);
     const ctx = contextFrom(settings ?? (await getSettings()));
     const now = new Date();

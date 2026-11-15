@@ -4,6 +4,10 @@
 -- Apply with your usual flow (`npx drizzle-kit push` picks this up from
 -- src/db/schema.ts) or run this file directly against the database.
 --
+-- The statements below are also executed on demand by
+-- src/db/ensure-schema.ts, so a deployed instance upgrades itself on first
+-- prayer read/write instead of failing with "column does not exist".
+--
 -- Existing rows keep working immediately:
 --   * offset_minutes already holds a minute nudge and is read as Δuser(p);
 --   * custom_time is kept as an audit trail of the clock time the user typed.
