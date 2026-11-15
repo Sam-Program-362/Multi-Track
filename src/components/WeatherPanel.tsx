@@ -20,9 +20,11 @@ function compass(deg: number) {
 export default function WeatherPanel({
   settings,
   onLocationChange,
+  settingsVerified = true,
 }: {
   settings: Settings;
   onLocationChange: (patch: Partial<Settings>) => Promise<void>;
+  settingsVerified?: boolean;
 }) {
   const [data, setData] = useState<WeatherPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +98,11 @@ export default function WeatherPanel({
       <SectionTitle
         icon="☁️"
         title="Live Weather"
-        subtitle={`${settings.locationName} · ${settings.latitude.toFixed(2)}°, ${settings.longitude.toFixed(2)}°`}
+        subtitle={
+          settingsVerified
+            ? `${settings.locationName} · ${settings.latitude.toFixed(2)}°, ${settings.longitude.toFixed(2)}°`
+            : `Default coordinates · ${settings.latitude.toFixed(2)}°, ${settings.longitude.toFixed(2)}°`
+        }
         right={
           <div className="flex gap-1">
             <Touchable

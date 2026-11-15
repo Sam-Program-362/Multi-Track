@@ -42,6 +42,11 @@ import {
   type SoundId,
 } from "@/lib/alarm";
 import type { PrayerPref, Settings } from "@/lib/types";
+import {
+  PRAYER_SCHEDULE_UNAVAILABLE_DETAIL,
+  PRAYER_SCHEDULE_UNAVAILABLE_MESSAGE,
+  visiblePrayerSchedule,
+} from "@/lib/prayer-visibility";
 import { Panel, SectionTitle, Toggle, Touchable } from "./ui";
 
 /** One row of the day's schedule, with its astronomical baseline and rule. */
@@ -78,12 +83,19 @@ export default function IslamicPanel({
   prefs,
   onSettings,
   onPref,
+  settingsVerified = true,
 }: {
   now: Date;
   settings: Settings;
   prefs: PrayerPref[];
   onSettings: (patch: Partial<Settings>) => Promise<void>;
   onPref: (patch: PrayerPref & PrayerPrefWriteHints) => Promise<void>;
+  /**
+   * False when the saved settings could not be read from the database. The
+   * server has no Android equivalent (device storage is local), so it always
+   * defaults to true there.
+   */
+  settingsVerified?: boolean;
 }) {
   const [tab, setTab] = useState<"times" | "events" | "setup">("times");
   const [audioReady, setAudioReady] = useState(false);
@@ -103,9 +115,11 @@ export default function IslamicPanel({
     [now.getFullYear(), now.getMonth(), now.getDate()], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
+  // Times are withheld entirely when the saved settings could not be read:
+  // a fallback location would render plausible-looking times for the wrong place.
   const schedule = useMemo(
-    () => buildSchedule(today, settings, prefs),
-    [today, settings, prefs],
+    () => visiblePrayerSchedule(buildSchedule(today, settings, prefs), settingsVerified),
+    [today, settings, prefs, settingsVerified],
   );
 
   const nowMinutes = minutesNowIn(now, settings.timezone);
@@ -133,6 +147,8 @@ export default function IslamicPanel({
   // Reminder engine
   useEffect(() => {
     if (!settings.remindersEnabled) return;
+    // Never fire a reminder from times calculated for a fallback location.
+    if (!settingsVerified) return;
     const dayKey = today.toDateString();
     schedule.forEach((item) => {
       if (!item.reminder || !PRAYER_META[item.key].isPrayer) return;
@@ -157,7 +173,7 @@ export default function IslamicPanel({
         window.setTimeout(() => setBanner(null), 25000);
       }
     });
-  }, [nowMinutes, now, schedule, settings.remindersEnabled, settings.reminderSound, settings.use24Hour, today]);
+  }, [nowMinutes, now, schedule, settings.remindersEnabled, settings.reminderSound, settings.use24Hour, settingsVerified, today]);
 
   const enableAlerts = async () => {
     const ok = await unlockAudio();
@@ -406,6 +422,19 @@ export default function IslamicPanel({
       ) : null}
 
       {tab === "times" ? (
+        !settingsVerified ? (
+          <div
+            className="rounded-2xl border px-3 py-4 text-[11px] leading-relaxed"
+            style={{ borderColor: "#f59e0b", background: "rgba(245,158,11,0.12)" }}
+            role="alert"
+          >
+            <div className="text-sm font-semibold">🕰 Prayer schedule unavailable</div>
+            <p className="mt-1">{PRAYER_SCHEDULE_UNAVAILABLE_MESSAGE}</p>
+            <p className="mt-1" style={{ color: "var(--muted)" }}>
+              {PRAYER_SCHEDULE_UNAVAILABLE_DETAIL}
+            </p>
+          </div>
+        ) : (
         <>
           <div
             className="relative flex items-center gap-4 overflow-hidden rounded-2xl border p-4"
@@ -892,6 +921,7 @@ export default function IslamicPanel({
             )}
           </div>
         </>
+        )
       ) : null}
 
       {tab === "events" ? (

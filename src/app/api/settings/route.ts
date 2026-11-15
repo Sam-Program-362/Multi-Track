@@ -17,6 +17,17 @@ export async function GET() {
       { status: 503 },
     );
   }
+  // A failed read must not be dressed up as successfully retrieved settings:
+  // the fallback row describes Dhaka, not this user.
+  if (!snapshot.fromDatabase || snapshot.notice) {
+    return NextResponse.json(
+      {
+        error: "Saved settings are unavailable",
+        detail: snapshot.notice ?? "The settings row could not be read.",
+      },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
+  }
   return NextResponse.json(snapshot.settings);
 }
 

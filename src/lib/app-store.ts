@@ -304,6 +304,12 @@ export type HomeData = {
   prefs: PrayerPref[];
   notice: string | null;
   schemaOk: boolean;
+  /**
+   * True only when the settings used for this render were read from the
+   * database. The UI must not present calculated prayer times (or fire
+   * reminders) when this is false.
+   */
+  settingsVerified: boolean;
 };
 
 /**
@@ -318,5 +324,6 @@ export async function loadHomeData(store: AppStore): Promise<HomeData> {
     prefs: prayerLoad.prefs,
     notice: snapshot.notice ?? prayerLoad.notice,
     schemaOk: snapshot.schema.ok,
+    settingsVerified: snapshot.fromDatabase && snapshot.notice === null,
   };
 }

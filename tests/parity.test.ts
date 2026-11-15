@@ -6,7 +6,14 @@ import { describe, expect, it } from "vitest";
  * engine. They must stay byte-identical: a divergence here would mean the phone
  * and the website disagree about a prayer time.
  */
-const SHARED = ["prayer", "calibration", "timezones", "calendars", "islamicEvents"];
+const SHARED = [
+  "prayer",
+  "calibration",
+  "timezones",
+  "calendars",
+  "islamicEvents",
+  "prayer-visibility",
+];
 
 function read(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
