@@ -2,7 +2,6 @@
  * Self-contained prayer time calculation (PrayTimes-style astronomy).
  * No network needed – works offline in the browser or on the server.
  */
-import { toHijri } from "./calendars";
 
 export type PrayerKey =
   | "fajr"
@@ -100,87 +99,20 @@ function sunPosition(jd: number) {
   return { declination, equation };
 }
 
-/** Juristic shadow ratio for Asr: 1 = Shafi'i/Maliki/Hanbali, 2 = Hanafi. */
-export type AsrJuristic = "Standard" | "Hanafi";
-
-/**
- * What to do when the sun never reaches a twilight depression angle (high
- * latitudes in summer). `auto` picks a sensible band from the latitude,
- * `none` keeps the clamped (solar-noon-ish) result.
- */
-export type HighLatitudeRule =
-  | "auto"
-  | "angle"
-  | "seventh"
-  | "middleOfNight"
-  | "none";
-
 export type PrayerOptions = {
   latitude: number;
   longitude: number;
   timezoneOffsetHours: number; // offset from UTC for the given date
   method: MethodKey;
-  asrJuristic?: AsrJuristic;
-  /** Observer height above sea level in metres (horizon dip). */
-  elevationMeters?: number;
-  /** High-latitude twilight fallback, see `HighLatitudeRule`. */
-  highLatitudeRule?: HighLatitudeRule;
+  asrJuristic?: "Standard" | "Hanafi";
 };
 
 export type ComputedTimes = Record<PrayerKey, number>; // decimal hours, local
-
-/**
- * Apparent horizon: solar semi-diameter + refraction + the dip caused by the
- * observer's elevation (spec equation for α0).
- */
-export function horizonAngle(elevationMeters = 0): number {
-  const h = Number.isFinite(elevationMeters) ? Math.max(0, elevationMeters) : 0;
-  return 0.833 + 0.0347 * Math.sqrt(h);
-}
-
-/**
- * 48°–55°: sixtieth rule, 55°–60°: one seventh of the night, above 60°: middle
- * of the night. Chosen by latitude because the spec's latitude bands overlap.
- */
-export function resolveHighLatitudeRule(
-  rule: HighLatitudeRule,
-  latitude: number,
-): Exclude<HighLatitudeRule, "auto"> {
-  if (rule !== "auto") return rule;
-  const absLat = Math.abs(latitude);
-  if (absLat >= 60) return "middleOfNight";
-  if (absLat >= 55) return "seventh";
-  return "angle";
-}
-
-/** Portion of the night used by the fallback formulas. */
-function nightPortion(angle: number, rule: Exclude<HighLatitudeRule, "auto">): number {
-  if (rule === "none") return 0;
-  if (rule === "seventh") return 1 / 7;
-  if (rule === "middleOfNight") return 0.5;
-  // Sixtieth rule: α ÷ 60 of the night.
-  return Math.min(0.5, Math.max(0, angle / 60));
-}
-
-/** Ramadan (Hijri month 9) — Umm al-Qura extends Isha to 120 minutes then. */
-function isRamadan(date: Date): boolean {
-  try {
-    return toHijri(date).month === 9;
-  } catch {
-    return false;
-  }
-}
 
 export function computePrayerTimes(date: Date, opts: PrayerOptions): ComputedTimes {
   const { latitude: lat, longitude: lng, timezoneOffsetHours: tz } = opts;
   const params = METHODS[opts.method] ?? METHODS.MWL;
   const asrFactor = opts.asrJuristic === "Hanafi" ? 2 : 1;
-  const horizon = horizonAngle(opts.elevationMeters);
-  // Umm al-Qura measures Isha in minutes after Maghrib: 90 normally, 120 in Ramadan.
-  const ishaMinutes =
-    params.ishaMinutes === undefined
-      ? undefined
-      : params.ishaMinutes + (opts.method === "Makkah" && isRamadan(date) ? 30 : 0);
   const jDate =
     julian(date.getFullYear(), date.getMonth() + 1, date.getDate()) - lng / (15 * 24);
 
@@ -189,22 +121,17 @@ export function computePrayerTimes(date: Date, opts: PrayerOptions): ComputedTim
     return fixHour(12 - equation);
   };
 
-  type AngleResult = { hours: number; reachable: boolean };
-
-  const sunAngleTime = (angle: number, t: number, ccw = false): AngleResult => {
+  const sunAngleTime = (angle: number, t: number, ccw = false) => {
     const { declination } = sunPosition(jDate + t);
     const noon = midDay(t);
     const inner =
       (-sin(angle) - sin(declination) * sin(lat)) / (cos(declination) * cos(lat));
-    // |cos H| > 1 means the sun never reaches the angle that day: this is the
-    // high-latitude case the fallback rules exist for.
-    const reachable = inner >= -1 && inner <= 1;
     const clamped = Math.max(-1, Math.min(1, inner));
     const delta = arccos(clamped) / 15;
-    return { hours: noon + (ccw ? -delta : delta), reachable };
+    return noon + (ccw ? -delta : delta);
   };
 
-  const asrTime = (factor: number, t: number): AngleResult => {
+  const asrTime = (factor: number, t: number) => {
     const { declination } = sunPosition(jDate + t);
     const angle = -arccot(factor + tan(Math.abs(lat - declination)));
     return sunAngleTime(angle, t);
@@ -220,85 +147,33 @@ export function computePrayerTimes(date: Date, opts: PrayerOptions): ComputedTim
     isha: 19 / 24,
   };
 
-  let reachable: Record<"fajr" | "sunrise" | "maghrib" | "isha", boolean> = {
-    fajr: true,
-    sunrise: true,
-    maghrib: true,
-    isha: true,
-  };
-
   for (let i = 0; i < 3; i += 1) {
     const fajr = sunAngleTime(params.fajr, times.fajr, true);
-    const sunrise = sunAngleTime(horizon, times.sunrise, true);
+    const sunrise = sunAngleTime(0.833, times.sunrise, true);
     const dhuhr = midDay(times.dhuhr) + 1 / 60;
     const asr = asrTime(asrFactor, times.asr);
     const maghrib = params.maghrib
       ? sunAngleTime(params.maghrib, times.maghrib)
-      : sunAngleTime(horizon, times.maghrib);
-    const isha = ishaMinutes
-      ? { hours: maghrib.hours + ishaMinutes / 60, reachable: true }
+      : sunAngleTime(0.833, times.maghrib);
+    const isha = params.ishaMinutes
+      ? maghrib + params.ishaMinutes / 60
       : sunAngleTime(params.isha, times.isha);
-    reachable = {
-      fajr: fajr.reachable,
-      sunrise: sunrise.reachable,
-      maghrib: maghrib.reachable,
-      isha: isha.reachable,
-    };
     times = {
-      fajr: fajr.hours / 24,
-      sunrise: sunrise.hours / 24,
+      fajr: fajr / 24,
+      sunrise: sunrise / 24,
       dhuhr: dhuhr / 24,
-      asr: asr.hours / 24,
-      maghrib: maghrib.hours / 24,
-      isha: isha.hours / 24,
+      asr: asr / 24,
+      maghrib: maghrib / 24,
+      isha: isha / 24,
     };
-  }
-
-  const hours = {} as ComputedTimes;
-  (Object.keys(times) as PrayerKey[]).forEach((k) => {
-    hours[k] = times[k] * 24;
-  });
-
-  // High-latitude fallback: replace only the angles the sun never reached.
-  const rule = resolveHighLatitudeRule(opts.highLatitudeRule ?? "auto", lat);
-  const needsFajrFallback = !reachable.fajr;
-  const needsIshaFallback = !reachable.isha && !params.ishaMinutes;
-  if (rule !== "none" && (needsFajrFallback || needsIshaFallback)) {
-    // Night length = next sunrise − tonight's sunset. When the sun neither
-    // rises nor sets (polar day/night) there is no night to divide, so the
-    // fallback collapses onto sunrise/sunset instead of inventing hours.
-    let night = 0;
-    if (reachable.sunrise && reachable.maghrib) {
-      const span = 24 - (hours.maghrib - hours.sunrise);
-      if (Number.isFinite(span) && span > 0 && span <= 24) night = span;
-    }
-    if (needsFajrFallback) {
-      hours.fajr = hours.sunrise - nightPortion(params.fajr, rule) * night;
-    }
-    if (needsIshaFallback) {
-      hours.isha = hours.maghrib + nightPortion(params.isha, rule) * night;
-    }
   }
 
   const out = {} as ComputedTimes;
-  (Object.keys(hours) as PrayerKey[]).forEach((k) => {
+  (Object.keys(times) as PrayerKey[]).forEach((k) => {
     // Convert from the longitude-local solar scale to civil clock time.
-    let v = hours[k] + tz - lng / 15;
+    let v = times[k] * 24 + tz - lng / 15;
     if (!Number.isFinite(v)) v = 0;
     out[k] = fixHour(v);
-  });
-  return out;
-}
-
-/** Same as `computePrayerTimes` but rounded to minutes past local midnight. */
-export function computePrayerMinutes(
-  date: Date,
-  opts: PrayerOptions,
-): Record<PrayerKey, number> {
-  const times = computePrayerTimes(date, opts);
-  const out = {} as Record<PrayerKey, number>;
-  (Object.keys(times) as PrayerKey[]).forEach((key) => {
-    out[key] = hoursToMinutes(times[key]);
   });
   return out;
 }

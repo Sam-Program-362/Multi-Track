@@ -39,30 +39,15 @@ export const worldClocks = pgTable("world_clocks", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-/**
- * Per-prayer calibration state.
- *
- * `offsetMinutes` holds Δuser(p) — the gap between the user's entered time and
- * the astronomical baseline on `calibratedAt`. `customTime` is legacy: it keeps
- * the clock time the user once typed for reference, but it is never used to
- * schedule anything (that would reintroduce seasonal drift).
- */
+/** Per-prayer customisation: manual time, minute offset and reminder toggle. */
 export const prayerPrefs = pgTable(
   "prayer_prefs",
   {
     id: serial("id").primaryKey(),
     prayerKey: text("prayer_key").notNull(),
     label: text("label").notNull().default(""),
-    /** dynamicOffset | steppedOffset | fixedClock */
-    mode: text("mode").notNull().default("dynamicOffset"),
     customTime: text("custom_time"),
     offsetMinutes: integer("offset_minutes").notNull().default(0),
-    /** Quantisation step S in minutes (5/10/15), 0 = off. */
-    stepMinutes: integer("step_minutes").notNull().default(0),
-    /** "HH:mm" used when mode = fixedClock. */
-    fixedTime: text("fixed_time"),
-    /** Calibration date d0 as "YYYY-MM-DD". */
-    calibratedAt: text("calibrated_at"),
     reminderEnabled: boolean("reminder_enabled").notNull().default(true),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
