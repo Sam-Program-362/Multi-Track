@@ -21,7 +21,7 @@ export default function AboutPanel({ onReset }: { onReset: () => void }) {
       if (result.requested) {
         setWidgetHint("Follow your launcher's prompt to place the clock on the home screen.");
       } else {
-        setWidgetHint("Long-press your home screen, choose Widgets, then Multi-Track → Digital Clock.");
+        setWidgetHint("Long-press your home screen, choose Widgets, then the Multi-Track clock widget.");
       }
     } finally {
       setWidgetBusy(false);
@@ -49,7 +49,8 @@ export default function AboutPanel({ onReset }: { onReset: () => void }) {
         </div>
         <div className="rounded-2xl border px-3 py-2" style={cardStyle}>
           <strong style={{ color: "var(--fg)" }}>Home-screen clock.</strong> Add the transparent
-          Digital Clock widget with live seconds, date, and sun/moon AM–PM.
+          clock widget with live seconds, date, and sun/moon AM–PM. It appears without a title
+          underneath.
           <div className="mt-2">
             <Touchable
               onClick={addClockWidget}

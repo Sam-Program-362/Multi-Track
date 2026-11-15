@@ -5,6 +5,7 @@ The clock widget lives in the standalone Capacitor Android app (`android/`), not
 ## User-facing behavior
 
 - Transparent widget surface; the launcher wallpaper shows through.
+- No visible widget title/caption underneath. The receiver label is intentionally empty because some launchers render the provider label below the widget.
 - Large hours/minutes, live seconds at exactly half text size.
 - Weekday, month, and date on one quiet line.
 - Sun icon for AM, half-moon icon for PM.
@@ -41,8 +42,8 @@ The existing workflow `.github/workflows/android-apk.yml` builds the APK. Pull r
 
 ## Manual test checklist
 
-- [ ] Install APK, long-press launcher → Widgets → Multi-Track → Digital Clock.
-- [ ] Widget is transparent over wallpaper; seconds are half-size and tick.
+- [ ] Install APK, long-press launcher → Widgets → Multi-Track clock widget.
+- [ ] Widget is transparent over wallpaper; no “Digital Clock” caption appears underneath; seconds are half-size and tick.
 - [ ] Sun before noon, half moon after noon; date line updates at midnight.
 - [ ] Tap widget opens app.
 - [ ] About → Add clock widget shows launcher pin prompt where supported.

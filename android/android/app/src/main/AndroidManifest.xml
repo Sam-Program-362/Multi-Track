@@ -28,10 +28,13 @@
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- Empty provider label: some launchers draw this label as a caption
+             beneath the home-screen widget. The picker still has the preview
+             and description; the widget surface itself stays caption-free. -->
         <receiver
             android:name=".widget.DigitalClockWidgetProvider"
             android:exported="true"
-            android:label="@string/widget_digital_clock_label">
+            android:label="">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="android.intent.action.TIME_SET" />
