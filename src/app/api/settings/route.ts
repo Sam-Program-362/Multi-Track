@@ -1,20 +1,57 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
+import { ensurePrayerCalibrationSchema } from "@/db/ensure-schema";
 import { appSettings } from "@/db/schema";
-import { getSettings } from "@/lib/server-data";
+import { loadSettingsSnapshot } from "@/lib/server-data";
 import { METHODS, type MethodKey } from "@/lib/prayer";
+import { HIGH_LATITUDE_CHOICES } from "@/lib/calibration";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const settings = await getSettings();
-  return NextResponse.json(settings);
+  const snapshot = await loadSettingsSnapshot();
+  if (!snapshot.schema.ok) {
+    return NextResponse.json(
+      { error: "Database schema is not ready", detail: snapshot.schema.error },
+      { status: 503 },
+    );
+  }
+  // A failed read must not be dressed up as successfully retrieved settings:
+  // the fallback row describes Dhaka, not this user.
+  if (!snapshot.fromDatabase || snapshot.notice) {
+    return NextResponse.json(
+      {
+        error: "Saved settings are unavailable",
+        detail: snapshot.notice ?? "The settings row could not be read.",
+      },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  return NextResponse.json(snapshot.settings);
 }
 
 export async function PUT(request: Request) {
   const body = (await request.json()) as Record<string, unknown>;
-  await getSettings(); // ensure row exists
+
+  // The settings row itself gains columns, so the DDL must be complete before
+  // it can be read, seeded or updated.
+  const schema = await ensurePrayerCalibrationSchema();
+  if (!schema.ok) {
+    return NextResponse.json(
+      { error: "Database schema is not ready", detail: schema.error },
+      { status: 503 },
+    );
+  }
+
+  // Ensure the singleton row exists, and refuse to patch from a fallback.
+  const snapshot = await loadSettingsSnapshot();
+  if (snapshot.notice) {
+    return NextResponse.json(
+      { error: "Settings are unavailable", detail: snapshot.notice },
+      { status: 503 },
+    );
+  }
 
   const patch: Partial<typeof appSettings.$inferInsert> = { updatedAt: new Date() };
 
@@ -36,6 +73,15 @@ export async function PUT(request: Request) {
   if (body.asrJuristic === "Hanafi" || body.asrJuristic === "Standard") {
     patch.asrJuristic = body.asrJuristic;
   }
+  if (typeof body.elevationMeters === "number" && Number.isFinite(body.elevationMeters)) {
+    patch.elevationMeters = Math.max(0, Math.min(4000, Math.round(body.elevationMeters)));
+  }
+  if (
+    typeof body.highLatitudeRule === "string" &&
+    HIGH_LATITUDE_CHOICES.some((choice) => choice.id === body.highLatitudeRule)
+  ) {
+    patch.highLatitudeRule = body.highLatitudeRule;
+  }
   if (typeof body.use24Hour === "boolean") patch.use24Hour = body.use24Hour;
   if (typeof body.remindersEnabled === "boolean") {
     patch.remindersEnabled = body.remindersEnabled;
@@ -56,5 +102,6 @@ export async function PUT(request: Request) {
     );
   }
 
-  return NextResponse.json(await getSettings());
+  const updated = await loadSettingsSnapshot();
+  return NextResponse.json(updated.settings);
 }

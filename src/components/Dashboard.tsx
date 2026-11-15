@@ -15,7 +15,7 @@ import Splash from "./Splash";
 import CalendarPanel from "./CalendarPanel";
 import ClockPanel from "./ClockPanel";
 import WeatherPanel from "./WeatherPanel";
-import IslamicPanel from "./IslamicPanel";
+import IslamicPanel, { type PrayerPrefWriteHints } from "./IslamicPanel";
 import { Touchable } from "./ui";
 import InstallApp from "./InstallApp";
 
@@ -32,10 +32,16 @@ export default function Dashboard({
   initialSettings,
   initialClocks,
   initialPrefs,
+  initialNotice,
+  scheduleVerified = true,
 }: {
   initialSettings: Settings;
   initialClocks: WorldClock[];
   initialPrefs: PrayerPref[];
+  /** Set when the server could not prepare the database/settings. */
+  initialNotice?: string | null;
+  /** False when the saved settings could not be read: times are withheld. */
+  scheduleVerified?: boolean;
 }) {
   const [now, setNow] = useState(() => new Date());
   const [settings, setSettings] = useState(initialSettings);
@@ -119,10 +125,23 @@ export default function Dashboard({
   );
 
   const savePref = useCallback(
-    async (patch: PrayerPref) => {
+    async (patch: PrayerPref & PrayerPrefWriteHints) => {
+      // Only the stored fields belong in state; the rest are save-time hints.
+      const pref: PrayerPref = {
+        prayerKey: patch.prayerKey,
+        mode: patch.mode,
+        offsetMinutes: patch.offsetMinutes,
+        stepMinutes: patch.stepMinutes,
+        fixedTime: patch.fixedTime,
+        customTime: patch.customTime,
+        calibratedAt: patch.calibratedAt,
+        reminderEnabled: patch.reminderEnabled,
+        iqamah: patch.iqamah,
+        reminderAt: patch.reminderAt,
+      };
       setPrefs((prev) => {
-        const rest = prev.filter((p) => p.prayerKey !== patch.prayerKey);
-        return [...rest, patch];
+        const rest = prev.filter((p) => p.prayerKey !== pref.prayerKey);
+        return [...rest, pref];
       });
       try {
         const res = await fetch("/api/prayers", {
@@ -215,7 +234,13 @@ export default function Dashboard({
                     Multi-Track Dashboard
                   </h1>
                   <p className="text-xs sm:text-sm" style={{ color: theme.muted }}>
-                    {settings.locationName} · {guessTimezone()}
+                    {scheduleVerified ? (
+                      <>
+                        {settings.locationName} · {guessTimezone()}
+                      </>
+                    ) : (
+                      <>Location not verified · showing defaults · {guessTimezone()}</>
+                    )}
                   </p>
                 </div>
               </div>
@@ -269,6 +294,22 @@ export default function Dashboard({
           </div>
         </header>
 
+        {initialNotice ? (
+          <div
+            className="mb-4 rounded-2xl border px-3 py-2 text-[11px] leading-relaxed"
+            style={{ borderColor: "#f59e0b", background: "rgba(245,158,11,0.12)" }}
+            role="alert"
+          >
+            <strong>{scheduleVerified ? "Data warning" : "Prayer schedule unavailable"}</strong> —{" "}
+            {initialNotice}
+            <div className="mt-0.5" style={{ color: "var(--muted)" }}>
+              {scheduleVerified
+                ? "Saved prayer times were left untouched; nothing was migrated with fallback settings."
+                : "Calculated prayer times are hidden until your saved settings can be read, and no reminders will fire. Saved preferences and calibration are untouched."}
+            </div>
+          </div>
+        ) : null}
+
         <div className="grid gap-4 lg:grid-cols-2">
           <CalendarPanel now={now} />
           <ClockPanel
@@ -285,8 +326,9 @@ export default function Dashboard({
             prefs={prefs}
             onSettings={saveSettings}
             onPref={savePref}
+            scheduleVerified={scheduleVerified}
           />
-          <WeatherPanel settings={settings} onLocationChange={saveSettings} />
+          <WeatherPanel settings={settings} onLocationChange={saveSettings} scheduleVerified={scheduleVerified} />
         </div>
 
         <footer className="mt-8 text-center text-[11px]" style={{ color: theme.muted }}>

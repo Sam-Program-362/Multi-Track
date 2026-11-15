@@ -10,11 +10,34 @@
  * of wiping it.
  */
 import { Preferences } from "@capacitor/preferences";
-import { METHODS, PRAYER_ORDER, type MethodKey } from "./prayer";
+import {
+  HIGH_LATITUDE_CHOICES,
+  contextFrom,
+  dateKey,
+  normalizeIqamah,
+  normalizeStoredRule,
+  parseClock,
+  parseDateKey,
+  sanitizeMode,
+  sanitizeOffset,
+  sanitizeReminderTarget,
+  sanitizeStep,
+} from "./calibration";
+import { METHODS, PRAYER_ORDER, formatMinutes, type MethodKey } from "./prayer";
 import type { PrayerPref, Settings, WorldClock } from "./types";
 
-/** Bump this when the shape below changes and add a step to `migrate`. */
-export const STORAGE_VERSION = 1;
+/**
+ * Bump this when the shape below changes and add a step to `migrate`.
+ *
+ * v2 added the prayer calibration model (mode / step / fixed time /
+ * calibratedAt). v1 prayer preferences stored a static `customTime`, which
+ * `migrate` converts into a proper Δuser offset instead of dropping it.
+ *
+ * v3 adds the mosque jamaat policy (`iqamah`) and the reminder target
+ * (`reminderAt`). Both are additive: v1/v2 payloads migrate with "no jamaat"
+ * and "remind at the azan", and every existing calibration is left untouched.
+ */
+export const STORAGE_VERSION = 3;
 
 const STORAGE_KEY = "multitrack:store:v1";
 
@@ -26,6 +49,8 @@ export const DEFAULT_SETTINGS: Settings = {
   timezone: "Asia/Dhaka",
   method: "Karachi",
   asrJuristic: "Standard",
+  elevationMeters: 0,
+  highLatitudeRule: "auto",
   use24Hour: false,
   remindersEnabled: true,
   reminderSound: "chime",
@@ -167,6 +192,15 @@ export function sanitizeSettings(patch: unknown, current: Settings): Settings {
   if (body.asrJuristic === "Hanafi" || body.asrJuristic === "Standard") {
     next.asrJuristic = body.asrJuristic;
   }
+  if (typeof body.elevationMeters === "number" && Number.isFinite(body.elevationMeters)) {
+    next.elevationMeters = Math.max(0, Math.min(4000, Math.round(body.elevationMeters)));
+  }
+  if (
+    typeof body.highLatitudeRule === "string" &&
+    HIGH_LATITUDE_CHOICES.some((choice) => choice.id === body.highLatitudeRule)
+  ) {
+    next.highLatitudeRule = body.highLatitudeRule as Settings["highLatitudeRule"];
+  }
   if (typeof body.use24Hour === "boolean") next.use24Hour = body.use24Hour;
   if (typeof body.remindersEnabled === "boolean") {
     next.remindersEnabled = body.remindersEnabled;
@@ -177,29 +211,44 @@ export function sanitizeSettings(patch: unknown, current: Settings): Settings {
   return next;
 }
 
-/** Same rules the old `/api/prayers` PUT route enforced. */
+/** Validate one prayer's calibration state (mirrors `/api/prayers`). */
 export function sanitizePref(patch: unknown): PrayerPref {
   const body = isRecord(patch) ? patch : {};
   const key = typeof body.prayerKey === "string" ? body.prayerKey.trim() : "";
   if (!(PRAYER_ORDER as string[]).includes(key)) {
     throw new Error("Unknown prayer key");
   }
-  let customTime: string | null = null;
-  if (typeof body.customTime === "string" && body.customTime.trim()) {
-    if (!/^\d{1,2}:\d{2}$/.test(body.customTime.trim())) {
-      throw new Error("Invalid time (HH:MM)");
-    }
-    customTime = body.customTime.trim();
+
+  const readClock = (value: unknown): string | null => {
+    if (typeof value !== "string" || !value.trim()) return null;
+    const minutes = parseClock(value.trim());
+    if (minutes === null) throw new Error("Invalid time (HH:MM)");
+    return formatMinutes(minutes, true);
+  };
+
+  const mode = sanitizeMode(body.mode);
+  const stepMinutes = sanitizeStep(body.stepMinutes);
+  // Legacy rows kept the entered clock time in `customTime`; it is an audit
+  // trail now, never a schedule.
+  const customTime = readClock(body.customTime);
+  const fixedTime = readClock(body.fixedTime) ?? (mode === "fixedClock" ? customTime : null);
+  if (mode === "fixedClock" && !fixedTime) {
+    throw new Error("A fixed clock time is required");
   }
-  const offsetMinutes =
-    typeof body.offsetMinutes === "number" && Number.isFinite(body.offsetMinutes)
-      ? Math.max(-120, Math.min(120, Math.round(body.offsetMinutes)))
-      : 0;
+
   return {
     prayerKey: key,
+    mode,
+    offsetMinutes: sanitizeOffset(body.offsetMinutes),
+    stepMinutes,
+    fixedTime,
     customTime,
-    offsetMinutes,
+    calibratedAt: parseDateKey(body.calibratedAt),
     reminderEnabled: body.reminderEnabled !== false,
+    // Islam never stores congregation times as astronomy: this is the mosque's
+    // policy, validated and kept apart from the azan rule.
+    iqamah: normalizeIqamah(body.iqamah),
+    reminderAt: sanitizeReminderTarget(body.reminderAt),
   };
 }
 
@@ -250,9 +299,44 @@ function migrate(raw: unknown): StoreShape {
   });
   const prefs: PrayerPref[] = [];
   if (Array.isArray(data.prefs)) {
-    data.prefs.forEach((pref) => {
+    const calibrationContext = contextFrom(settings);
+    const migratedAt = new Date();
+    data.prefs.forEach((raw) => {
       try {
-        prefs.push(sanitizePref(pref));
+        const pref = sanitizePref(raw);
+        if (!pref.calibratedAt && pref.customTime && pref.mode !== "fixedClock") {
+          // v1 static override: recover the Δuser it encoded, so the prayer
+          // keeps showing the familiar time today and tracks the sun from now.
+          const rule = normalizeStoredRule(
+            pref.prayerKey,
+            {
+              mode: pref.mode,
+              offsetMinutes: pref.offsetMinutes,
+              stepMinutes: pref.stepMinutes,
+              fixedTime: pref.fixedTime,
+              customTime: pref.customTime,
+              calibratedAt: null,
+            },
+            calibrationContext,
+            migratedAt,
+          );
+          prefs.push({
+            ...pref,
+            mode: rule.mode,
+            offsetMinutes: rule.offsetMin,
+            stepMinutes: rule.stepMin,
+            fixedTime: rule.fixedClock,
+            calibratedAt: rule.calibratedAt,
+          });
+          return;
+        }
+        if (pref.mode === "fixedClock" && !pref.calibratedAt) {
+          // A pinned clock time needs no Δuser, but give it a date so the UI can
+          // explain when it was configured.
+          prefs.push({ ...pref, calibratedAt: dateKey(migratedAt) });
+          return;
+        }
+        prefs.push(pref);
       } catch {
         /* drop invalid legacy rows */
       }
@@ -279,7 +363,14 @@ async function readStore(): Promise<StoreShape> {
     await writeJSON(STORAGE_KEY, fresh);
     return fresh;
   }
-  return migrate(raw);
+  const store = migrate(raw);
+  // Persist the upgraded payload. Without this, a v1 static prayer time would
+  // be re-derived against "today" on every launch, which would pin it in place
+  // and defeat the whole point of the calibration offsets.
+  if (!isRecord(raw) || raw.version !== STORAGE_VERSION) {
+    await writeStore(store);
+  }
+  return store;
 }
 
 async function writeStore(store: StoreShape): Promise<void> {
@@ -388,7 +479,16 @@ export async function getPrayerPrefs(): Promise<PrayerPref[]> {
 export async function savePrayerPref(patch: PrayerPref): Promise<PrayerPref[]> {
   const pref = sanitizePref(patch);
   const store = await readStore();
-  store.prefs = [...store.prefs.filter((p) => p.prayerKey !== pref.prayerKey), pref];
+  const previous = store.prefs.find((p) => p.prayerKey === pref.prayerKey);
+  // A partial write that does not mention the mosque policy keeps it, so
+  // correcting an azan never silently drops the jamaat configuration.
+  const merged: PrayerPref = {
+    ...pref,
+    iqamah: patch.iqamah === undefined && previous ? previous.iqamah : pref.iqamah,
+    reminderAt:
+      patch.reminderAt === undefined && previous ? previous.reminderAt : pref.reminderAt,
+  };
+  store.prefs = [...store.prefs.filter((p) => p.prayerKey !== merged.prayerKey), merged];
   await writeStore(store);
   return store.prefs;
 }
