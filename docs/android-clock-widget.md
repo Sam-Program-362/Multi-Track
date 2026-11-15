@@ -37,7 +37,7 @@ The earlier web widget gallery/routes/registry were removed from the root web ap
 
 ## CI / release
 
-The existing workflow `.github/workflows/android-apk.yml` builds the APK. Branch/manual dispatch builds upload an artifact; only `main` publishes a GitHub Release. The widget adds no new runtime permission: it reuses the app’s existing boot/exact-alarm permissions where available.
+The existing workflow `.github/workflows/android-apk.yml` builds the APK. Pull requests touching `android/**` run a validation build; branch/manual dispatch builds upload an artifact; only `main` publishes a GitHub Release. The widget adds no new runtime permission: it reuses the app’s existing boot/exact-alarm permissions where available.
 
 ## Manual test checklist
 

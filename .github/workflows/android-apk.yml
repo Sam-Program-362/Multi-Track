@@ -3,6 +3,7 @@ name: Android APK
 # Builds the signed Android APK for the standalone app in android/.
 #
 #   push to main touching android/**  -> automatic build
+#   pull request touching android/**  -> validation build (artifact only)
 #   manual dispatch                   -> rebuild on demand
 #
 # Secrets required for a signed release (Settings > Secrets and variables > Actions):
@@ -14,6 +15,11 @@ on:
     branches: [main]
     paths:
       - "android/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/android-apk.yml"
   workflow_dispatch:
 
 permissions:
