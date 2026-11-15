@@ -1,10 +1,15 @@
 # Multi-Track
 
-Calendars, world clocks, live weather, and salah times in one adaptive Next.js dashboard.
+Calendars, world clocks, live weather, and salah times in one adaptive interface.
 
-## Development
+This repository contains two surfaces:
 
-A PostgreSQL connection string is required by the data layer:
+- **Web dashboard** — the Next.js/PostgreSQL PWA at the repository root.
+- **Android app** — the standalone Capacitor app in [`android/`](android/), built and released by [`.github/workflows/android-apk.yml`](.github/workflows/android-apk.yml).
+
+## Web development
+
+A PostgreSQL connection string is required by the web data layer:
 
 ```bash
 DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:5432/app_db' npm run dev
@@ -18,12 +23,15 @@ npm run lint
 DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:5432/app_db' npm run build
 ```
 
-## Widgets
+## Android app
 
-Multi-Track includes a web-native widget system. The first widget is a plain transparent digital clock with half-size seconds and sun/moon AM–PM indicators.
+```bash
+cd android
+npm ci
+npm run build
+npx cap sync android
+```
 
-- Gallery: `/widgets`
-- Standalone clock: `/widgets/digital-clock`
-- Plan and platform notes: [`docs/widgets.md`](docs/widgets.md)
+The Android app includes a **native home-screen Digital Clock widget**: transparent, live seconds at half size, weekday/month/date, and sun/half-moon AM–PM indicators. See [`docs/android-clock-widget.md`](docs/android-clock-widget.md).
 
-These are web widgets inside the installed PWA/browser, not native Android/iOS home-screen widgets.
+The clock widget is native to Android; it is not part of the web dashboard.

@@ -67,9 +67,12 @@ export default function Dashboard({
   const [scheduledCount, setScheduledCount] = useState(0);
 
   useEffect(() => {
-    setMounted(true);
+    const mountTimer = window.setTimeout(() => setMounted(true), 0);
     const timer = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(mountTimer);
+      window.clearInterval(timer);
+    };
   }, []);
 
   // Native shell setup: dark status bar and a back button that closes the app.
@@ -190,8 +193,8 @@ export default function Dashboard({
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [reschedule]);
 
-  const hijri = useMemo(() => toHijri(now), [now.getDate(), now.getMonth(), now.getFullYear()]); // eslint-disable-line react-hooks/exhaustive-deps
-  const bangla = useMemo(() => toBangla(now), [now.getDate(), now.getMonth(), now.getFullYear()]); // eslint-disable-line react-hooks/exhaustive-deps
+  const hijri = useMemo(() => toHijri(now), [now]);
+  const bangla = useMemo(() => toBangla(now), [now]);
 
   const stars = useMemo(
     () =>

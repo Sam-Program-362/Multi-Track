@@ -166,7 +166,9 @@ jobs:
 
       # Tagging a release is what makes the APK downloadable from the phone.
       - name: Publish a GitHub Release
-        if: steps.secrets.outputs.available == 'true'
+        # Branch/manual test builds still upload an APK artifact, but only main
+        # publishes a downloadable GitHub Release.
+        if: steps.secrets.outputs.available == 'true' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

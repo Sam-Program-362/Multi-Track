@@ -55,9 +55,12 @@ export default function WeatherPanel({
   }, [settings.latitude, settings.longitude, settings.locationName]);
 
   useEffect(() => {
-    load();
+    const initial = window.setTimeout(load, 0);
     const t = window.setInterval(load, 10 * 60 * 1000);
-    return () => window.clearInterval(t);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(t);
+    };
   }, [load]);
 
   const runSearch = async () => {

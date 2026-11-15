@@ -6,7 +6,7 @@
  * no-op or to the existing web Notification API.
  */
 import { App } from "@capacitor/app";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { LocalNotifications, type LocalNotificationSchema } from "@capacitor/local-notifications";
@@ -31,6 +31,36 @@ export function platformName(): string {
     return Capacitor.getPlatform();
   } catch {
     return "web";
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Home-screen clock widget                                            */
+/* ------------------------------------------------------------------ */
+
+export type ClockWidgetPinResult = {
+  /** Launcher supports the system pin-widget dialog (Android 8+). */
+  supported: boolean;
+  /** Launcher accepted the request and showed/queued its confirmation UI. */
+  requested: boolean;
+};
+
+interface ClockWidgetPlugin {
+  requestPin(): Promise<ClockWidgetPinResult>;
+}
+
+const ClockWidget = registerPlugin<ClockWidgetPlugin>("ClockWidget");
+
+/**
+ * Ask the launcher to pin the native clock widget. This does not place a widget
+ * silently; Android shows the launcher's own confirmation sheet.
+ */
+export async function requestClockWidgetPin(): Promise<ClockWidgetPinResult> {
+  if (!isNative()) return { supported: false, requested: false };
+  try {
+    return await ClockWidget.requestPin();
+  } catch {
+    return { supported: false, requested: false };
   }
 }
 

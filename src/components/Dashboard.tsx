@@ -18,7 +18,6 @@ import WeatherPanel from "./WeatherPanel";
 import IslamicPanel from "./IslamicPanel";
 import { Touchable } from "./ui";
 import InstallApp from "./InstallApp";
-import WidgetsPanel from "./widgets/WidgetsPanel";
 
 const PHASE_OPTIONS: Array<DayPhase | "auto"> = [
   "auto",
@@ -272,8 +271,6 @@ export default function Dashboard({
             </div>
           </div>
         </header>
-
-        <WidgetsPanel />
 
         <div className="grid gap-4 lg:grid-cols-2">
           <CalendarPanel now={now} />

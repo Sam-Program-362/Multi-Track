@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_digital_clock_label">Digital Clock</string>
+    <string name="widget_digital_clock_description">Transparent clock with live seconds, weekday, month and date. A sun or half moon marks AM/PM.</string>
+    <string name="widget_am">AM</string>
+    <string name="widget_pm">PM</string>
+    <string name="widget_colon">:</string>
+</resources>
