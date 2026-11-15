@@ -202,7 +202,7 @@ describe("home-page load sequence on an old database", () => {
     expect(home.settings.asrJuristic).toBe("Standard");
     expect(home.settings.latitude).toBeCloseTo(51.5074, 4);
     expect(home.notice).toBeNull();
-    expect(home.settingsVerified).toBe(true);
+    expect(home.scheduleVerified).toBe(true);
   });
 
   it("migrates every legacy offset with the real location, never with Dhaka", async () => {
@@ -260,7 +260,7 @@ describe("schema initialization failures", () => {
     db.schemaFailures = 1;
     const home = await loadHomeData(db);
     expect(home.schemaOk).toBe(false);
-    expect(home.settingsVerified).toBe(false);
+    expect(home.scheduleVerified).toBe(false);
     expect(home.prefs).toEqual([]);
     expect(home.notice).toContain("schema");
     expect(db.calls).not.toContain("readSettingsRow");
@@ -275,7 +275,7 @@ describe("schema initialization failures", () => {
 
     const second = await loadHomeData(db);
     expect(second.schemaOk).toBe(true);
-    expect(second.settingsVerified).toBe(true);
+    expect(second.scheduleVerified).toBe(true);
     expect(second.settings.locationName).toBe("London, UK");
     const dhuhr = second.prefs.find((p) => p.prayerKey === "dhuhr")!;
     expect(dhuhr.offsetMinutes).toBe(expectedOffset("dhuhr", "13:10"));
@@ -292,7 +292,7 @@ describe("settings unavailable while the schema is fine", () => {
     // unverified so no calculated time can be presented as valid.
     expect(home.settings.locationName).toBe("Dhaka, Bangladesh");
     expect(home.notice).toContain("Settings could not be read");
-    expect(home.settingsVerified).toBe(false);
+    expect(home.scheduleVerified).toBe(false);
 
     // Legacy rows are returned exactly as stored: no derived offsets, no writes.
     const dhuhr = home.prefs.find((p) => p.prayerKey === "dhuhr")!;
@@ -309,7 +309,7 @@ describe("settings unavailable while the schema is fine", () => {
 
     db.settingsReadError = null;
     const recovered = await loadHomeData(db);
-    expect(recovered.settingsVerified).toBe(true);
+    expect(recovered.scheduleVerified).toBe(true);
     const dhuhr = recovered.prefs.find((p) => p.prayerKey === "dhuhr")!;
     expect(dhuhr.offsetMinutes).toBe(expectedOffset("dhuhr", "13:10"));
     expect(dhuhr.offsetMinutes).not.toBe(dhakaOffset("dhuhr", "13:10"));
@@ -340,7 +340,7 @@ describe("fresh database", () => {
     expect(home.prefs).toEqual([]);
     expect(db.updates).toHaveLength(0);
     expect(home.notice).toBeNull();
-    expect(home.settingsVerified).toBe(true);
+    expect(home.scheduleVerified).toBe(true);
   });
 });
 
@@ -350,12 +350,12 @@ describe("degraded rendering contract", () => {
     const storedBefore = structuredClone(db.prefsRows);
 
     const home = await loadHomeData(db);
-    expect(home.settingsVerified).toBe(false);
+    expect(home.scheduleVerified).toBe(false);
 
     // The panel renders through this helper, so the guard is what users see.
     const rendered = visiblePrayerSchedule(
       buildSchedule(new Date(), home.settings, home.prefs),
-      home.settingsVerified,
+      home.scheduleVerified,
     );
     expect(rendered).toEqual([]);
 
@@ -369,15 +369,15 @@ describe("degraded rendering contract", () => {
   it("restores a normal, verified schedule once the database is reachable", async () => {
     db.settingsReadError = "connection reset by peer";
     const degraded = await loadHomeData(db);
-    expect(degraded.settingsVerified).toBe(false);
+    expect(degraded.scheduleVerified).toBe(false);
 
     db.settingsReadError = null;
     const healthy = await loadHomeData(db);
-    expect(healthy.settingsVerified).toBe(true);
+    expect(healthy.scheduleVerified).toBe(true);
 
     const rendered = visiblePrayerSchedule(
       buildSchedule(new Date(), healthy.settings, healthy.prefs),
-      healthy.settingsVerified,
+      healthy.scheduleVerified,
     );
     expect(rendered.length).toBeGreaterThan(0);
     expect(rendered[0].azanMinutes).toBe(healthy.prefs.find((p) => p.prayerKey === "fajr")!.offsetMinutes + rendered[0].astroMinutes);

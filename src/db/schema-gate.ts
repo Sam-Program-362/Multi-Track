@@ -18,9 +18,21 @@ export type SchemaGate = {
   lastError(): string | null;
 };
 
+/**
+ * Human-readable failure text, including the underlying cause.
+ *
+ * Drizzle wraps driver errors in `DrizzleQueryError` whose own message is just
+ * "Failed query: <sql> params: <params>". Without the cause, a wrong password,
+ * an unreachable host and a missing table all look identical in the UI and in
+ * the 503 body, so the cause is appended when it adds information.
+ */
 export function messageOf(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined;
+  if (cause instanceof Error && cause.message && !message.includes(cause.message)) {
+    return `${message.trim()} (${cause.message})`;
+  }
+  return message;
 }
 
 export function createSchemaGate(

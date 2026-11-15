@@ -36,6 +36,22 @@ describe("schema gate", () => {
     expect(apply).toHaveBeenCalledTimes(2);
   });
 
+  it("includes the underlying driver cause, not just drizzle's wrapper text", async () => {
+    // drizzle-orm wraps driver failures: the outer message is only the SQL.
+    const driver = new Error("connect ECONNREFUSED 127.0.0.1:5432");
+    const wrapped = Object.assign(new Error("Failed query: SELECT 1\nparams: "), { cause: driver });
+    const gate = createSchemaGate(async () => {
+      throw wrapped;
+    });
+
+    const status = await gate.ensure();
+    expect(status.ok).toBe(false);
+    if (!status.ok) {
+      expect(status.error).toContain("Failed query");
+      expect(status.error).toContain("ECONNREFUSED 127.0.0.1:5432");
+    }
+  });
+
   it("shares one attempt between concurrent callers", async () => {
     let release!: () => void;
     const pending = new Promise<void>((resolve) => {

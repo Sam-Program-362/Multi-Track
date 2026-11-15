@@ -17,7 +17,7 @@ export default async function Home() {
       initialClocks={clocks}
       initialPrefs={home.prefs}
       initialNotice={home.notice}
-      settingsVerified={home.settingsVerified}
+      scheduleVerified={home.scheduleVerified}
     />
   );
 }

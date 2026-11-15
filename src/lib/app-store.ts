@@ -306,10 +306,11 @@ export type HomeData = {
   schemaOk: boolean;
   /**
    * True only when the settings used for this render were read from the
-   * database. The UI must not present calculated prayer times (or fire
-   * reminders) when this is false.
+   * database, i.e. the derived prayer schedule may be treated as the user's.
+   * When false the UI must not show calculated prayer times and must not fire
+   * reminders; stored preferences and calibration are left untouched.
    */
-  settingsVerified: boolean;
+  scheduleVerified: boolean;
 };
 
 /**
@@ -324,6 +325,6 @@ export async function loadHomeData(store: AppStore): Promise<HomeData> {
     prefs: prayerLoad.prefs,
     notice: snapshot.notice ?? prayerLoad.notice,
     schemaOk: snapshot.schema.ok,
-    settingsVerified: snapshot.fromDatabase && snapshot.notice === null,
+    scheduleVerified: snapshot.fromDatabase && snapshot.notice === null,
   };
 }

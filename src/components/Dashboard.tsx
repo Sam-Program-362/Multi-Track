@@ -33,7 +33,7 @@ export default function Dashboard({
   initialClocks,
   initialPrefs,
   initialNotice,
-  settingsVerified = true,
+  scheduleVerified = true,
 }: {
   initialSettings: Settings;
   initialClocks: WorldClock[];
@@ -41,7 +41,7 @@ export default function Dashboard({
   /** Set when the server could not prepare the database/settings. */
   initialNotice?: string | null;
   /** False when the saved settings could not be read: times are withheld. */
-  settingsVerified?: boolean;
+  scheduleVerified?: boolean;
 }) {
   const [now, setNow] = useState(() => new Date());
   const [settings, setSettings] = useState(initialSettings);
@@ -234,7 +234,7 @@ export default function Dashboard({
                     Multi-Track Dashboard
                   </h1>
                   <p className="text-xs sm:text-sm" style={{ color: theme.muted }}>
-                    {settingsVerified ? (
+                    {scheduleVerified ? (
                       <>
                         {settings.locationName} · {guessTimezone()}
                       </>
@@ -300,10 +300,10 @@ export default function Dashboard({
             style={{ borderColor: "#f59e0b", background: "rgba(245,158,11,0.12)" }}
             role="alert"
           >
-            <strong>{settingsVerified ? "Data warning" : "Prayer schedule unavailable"}</strong> —{" "}
+            <strong>{scheduleVerified ? "Data warning" : "Prayer schedule unavailable"}</strong> —{" "}
             {initialNotice}
             <div className="mt-0.5" style={{ color: "var(--muted)" }}>
-              {settingsVerified
+              {scheduleVerified
                 ? "Saved prayer times were left untouched; nothing was migrated with fallback settings."
                 : "Calculated prayer times are hidden until your saved settings can be read, and no reminders will fire. Saved preferences and calibration are untouched."}
             </div>
@@ -326,9 +326,9 @@ export default function Dashboard({
             prefs={prefs}
             onSettings={saveSettings}
             onPref={savePref}
-            settingsVerified={settingsVerified}
+            scheduleVerified={scheduleVerified}
           />
-          <WeatherPanel settings={settings} onLocationChange={saveSettings} settingsVerified={settingsVerified} />
+          <WeatherPanel settings={settings} onLocationChange={saveSettings} scheduleVerified={scheduleVerified} />
         </div>
 
         <footer className="mt-8 text-center text-[11px]" style={{ color: theme.muted }}>

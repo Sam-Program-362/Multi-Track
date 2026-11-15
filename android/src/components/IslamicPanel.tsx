@@ -88,7 +88,7 @@ export default function IslamicPanel({
   prefs,
   onSettings,
   onPref,
-  settingsVerified = true,
+  scheduleVerified = true,
 }: {
   now: Date;
   settings: Settings;
@@ -100,7 +100,7 @@ export default function IslamicPanel({
    * server has no Android equivalent (device storage is local), so it always
    * defaults to true there.
    */
-  settingsVerified?: boolean;
+  scheduleVerified?: boolean;
 }) {
   const [tab, setTab] = useState<"times" | "events" | "setup">("times");
   const [audioReady, setAudioReady] = useState(false);
@@ -123,8 +123,8 @@ export default function IslamicPanel({
   // Times are withheld entirely when the saved settings could not be read:
   // a fallback location would render plausible-looking times for the wrong place.
   const schedule = useMemo(
-    () => visiblePrayerSchedule(buildSchedule(today, settings, prefs), settingsVerified),
-    [today, settings, prefs, settingsVerified],
+    () => visiblePrayerSchedule(buildSchedule(today, settings, prefs), scheduleVerified),
+    [today, settings, prefs, scheduleVerified],
   );
 
   const nowMinutes = minutesNowIn(now, settings.timezone);
@@ -153,7 +153,7 @@ export default function IslamicPanel({
   useEffect(() => {
     if (!settings.remindersEnabled) return;
     // Never fire a reminder from times calculated for a fallback location.
-    if (!settingsVerified) return;
+    if (!scheduleVerified) return;
     const dayKey = today.toDateString();
     schedule.forEach((item) => {
       if (!item.reminder || !PRAYER_META[item.key].isPrayer) return;
@@ -183,7 +183,7 @@ export default function IslamicPanel({
         window.setTimeout(() => setBanner(null), 25000);
       }
     });
-  }, [nowMinutes, now, schedule, settings.remindersEnabled, settings.reminderSound, settings.use24Hour, settingsVerified, today]);
+  }, [nowMinutes, now, schedule, settings.remindersEnabled, settings.reminderSound, settings.use24Hour, scheduleVerified, today]);
 
   const enableAlerts = async () => {
     const ok = await unlockAudio();
@@ -432,7 +432,7 @@ export default function IslamicPanel({
       ) : null}
 
       {tab === "times" ? (
-        !settingsVerified ? (
+        !scheduleVerified ? (
           <div
             className="rounded-2xl border px-3 py-4 text-[11px] leading-relaxed"
             style={{ borderColor: "#f59e0b", background: "rgba(245,158,11,0.12)" }}
