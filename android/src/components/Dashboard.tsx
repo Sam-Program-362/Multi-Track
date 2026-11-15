@@ -170,8 +170,10 @@ export default function Dashboard({
       itemsForDate: (date) =>
         buildSchedule(date, settings, prefs).map((item) => ({
           key: item.key,
-          minutes: item.minutes,
+          // Honours the per-prayer "remind at azan / jamaat" choice.
+          minutes: item.reminderMinutes,
           enabled: item.reminder,
+          target: item.reminderAt,
         })),
     });
     setScheduledCount(count);

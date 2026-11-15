@@ -208,6 +208,8 @@ export type ReminderItem = {
   /** Minutes past midnight in the user's configured timezone. */
   minutes: number;
   enabled: boolean;
+  /** "iqamah" makes the notification say jamaat instead of prayer time. */
+  target?: "azan" | "iqamah";
 };
 
 /**
@@ -256,13 +258,14 @@ export async function schedulePrayerReminders(options: {
       if (at.getTime() <= now) return;
       const meta = PRAYER_META[item.key];
       const clock = formatMinutes(item.minutes, use24Hour);
+      const jamaat = item.target === "iqamah";
       notifications.push({
         id: day * 10 + index + 1,
-        title: `${meta.icon} ${meta.label} time`,
-        body: `It is ${clock} — time for ${meta.label}.`,
+        title: `${meta.icon} ${meta.label}${jamaat ? " jamaat" : " time"}`,
+        body: `It is ${clock} — ${jamaat ? "jamaat for" : "time for"} ${meta.label}.`,
         channelId,
         smallIcon: "ic_stat_multitrack",
-        extra: { prayerKey: item.key },
+        extra: { prayerKey: item.key, target: item.target ?? "azan" },
         schedule: { at, allowWhileIdle: true },
       });
     });

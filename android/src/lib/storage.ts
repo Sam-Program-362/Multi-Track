@@ -11,12 +11,16 @@
  */
 import { Preferences } from "@capacitor/preferences";
 import {
+  HIGH_LATITUDE_CHOICES,
   contextFrom,
+  dateKey,
+  normalizeIqamah,
   normalizeStoredRule,
   parseClock,
   parseDateKey,
   sanitizeMode,
   sanitizeOffset,
+  sanitizeReminderTarget,
   sanitizeStep,
 } from "./calibration";
 import { METHODS, PRAYER_ORDER, formatMinutes, type MethodKey } from "./prayer";
@@ -28,8 +32,12 @@ import type { PrayerPref, Settings, WorldClock } from "./types";
  * v2 added the prayer calibration model (mode / step / fixed time /
  * calibratedAt). v1 prayer preferences stored a static `customTime`, which
  * `migrate` converts into a proper Δuser offset instead of dropping it.
+ *
+ * v3 adds the mosque jamaat policy (`iqamah`) and the reminder target
+ * (`reminderAt`). Both are additive: v1/v2 payloads migrate with "no jamaat"
+ * and "remind at the azan", and every existing calibration is left untouched.
  */
-export const STORAGE_VERSION = 2;
+export const STORAGE_VERSION = 3;
 
 const STORAGE_KEY = "multitrack:store:v1";
 
@@ -41,6 +49,8 @@ export const DEFAULT_SETTINGS: Settings = {
   timezone: "Asia/Dhaka",
   method: "Karachi",
   asrJuristic: "Standard",
+  elevationMeters: 0,
+  highLatitudeRule: "auto",
   use24Hour: false,
   remindersEnabled: true,
   reminderSound: "chime",
@@ -182,6 +192,15 @@ export function sanitizeSettings(patch: unknown, current: Settings): Settings {
   if (body.asrJuristic === "Hanafi" || body.asrJuristic === "Standard") {
     next.asrJuristic = body.asrJuristic;
   }
+  if (typeof body.elevationMeters === "number" && Number.isFinite(body.elevationMeters)) {
+    next.elevationMeters = Math.max(0, Math.min(4000, Math.round(body.elevationMeters)));
+  }
+  if (
+    typeof body.highLatitudeRule === "string" &&
+    HIGH_LATITUDE_CHOICES.some((choice) => choice.id === body.highLatitudeRule)
+  ) {
+    next.highLatitudeRule = body.highLatitudeRule as Settings["highLatitudeRule"];
+  }
   if (typeof body.use24Hour === "boolean") next.use24Hour = body.use24Hour;
   if (typeof body.remindersEnabled === "boolean") {
     next.remindersEnabled = body.remindersEnabled;
@@ -226,6 +245,10 @@ export function sanitizePref(patch: unknown): PrayerPref {
     customTime,
     calibratedAt: parseDateKey(body.calibratedAt),
     reminderEnabled: body.reminderEnabled !== false,
+    // Islam never stores congregation times as astronomy: this is the mosque's
+    // policy, validated and kept apart from the azan rule.
+    iqamah: normalizeIqamah(body.iqamah),
+    reminderAt: sanitizeReminderTarget(body.reminderAt),
   };
 }
 
@@ -305,6 +328,12 @@ function migrate(raw: unknown): StoreShape {
             fixedTime: rule.fixedClock,
             calibratedAt: rule.calibratedAt,
           });
+          return;
+        }
+        if (pref.mode === "fixedClock" && !pref.calibratedAt) {
+          // A pinned clock time needs no Δuser, but give it a date so the UI can
+          // explain when it was configured.
+          prefs.push({ ...pref, calibratedAt: dateKey(migratedAt) });
           return;
         }
         prefs.push(pref);
@@ -450,7 +479,16 @@ export async function getPrayerPrefs(): Promise<PrayerPref[]> {
 export async function savePrayerPref(patch: PrayerPref): Promise<PrayerPref[]> {
   const pref = sanitizePref(patch);
   const store = await readStore();
-  store.prefs = [...store.prefs.filter((p) => p.prayerKey !== pref.prayerKey), pref];
+  const previous = store.prefs.find((p) => p.prayerKey === pref.prayerKey);
+  // A partial write that does not mention the mosque policy keeps it, so
+  // correcting an azan never silently drops the jamaat configuration.
+  const merged: PrayerPref = {
+    ...pref,
+    iqamah: patch.iqamah === undefined && previous ? previous.iqamah : pref.iqamah,
+    reminderAt:
+      patch.reminderAt === undefined && previous ? previous.reminderAt : pref.reminderAt,
+  };
+  store.prefs = [...store.prefs.filter((p) => p.prayerKey !== merged.prayerKey), merged];
   await writeStore(store);
   return store.prefs;
 }

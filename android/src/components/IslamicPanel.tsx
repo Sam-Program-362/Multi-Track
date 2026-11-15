@@ -3,13 +3,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { METHODS, PRAYER_META, formatMinutes, type MethodKey } from "@/lib/prayer";
 import {
+  HIGH_LATITUDE_CHOICES,
+  IQAMAH_MODES,
   STEP_CHOICES,
   TRACKING_MODES,
   buildSchedule as buildCalibratedSchedule,
   calibrationSummary,
   captureOffsetMinutes,
   dateKey,
+  defaultIqamah,
   describeRule,
+  describeIqamah,
+  normalizeIqamah,
+  resolveIqamah,
   detectedTimezone,
   formatClock,
   parseClock,
@@ -18,7 +24,9 @@ import {
   stepJumpMinutes,
   timezoneDrift,
   type CalibratedScheduleItem,
+  type IqamahRule,
   type PrayerRule,
+  type ReminderTarget,
   type TrackingMode,
 } from "@/lib/calibration";
 import { upcomingIslamicEvents } from "@/lib/islamicEvents";
@@ -91,6 +99,8 @@ export default function IslamicPanel({
   const [draftStep, setDraftStep] = useState<number>(10);
   const [draftTime, setDraftTime] = useState("");
   const [draftOffset, setDraftOffset] = useState(0);
+  const [draftIqamah, setDraftIqamah] = useState<IqamahRule>(defaultIqamah());
+  const [draftReminderAt, setDraftReminderAt] = useState<ReminderTarget>("azan");
   const [tzDismissed, setTzDismissed] = useState(false);
 
   const today = useMemo(
@@ -131,9 +141,10 @@ export default function IslamicPanel({
     const dayKey = today.toDateString();
     schedule.forEach((item) => {
       if (!item.reminder || !PRAYER_META[item.key].isPrayer) return;
-      const id = `${dayKey}:${item.key}`;
+      const id = `${dayKey}:${item.key}:${item.reminderAt}`;
       if (firedRef.current.has(id)) return;
-      const diff = nowMinutes - item.minutes;
+      const at = item.reminderMinutes;
+      const diff = nowMinutes - at;
       if (diff === 0 && now.getSeconds() < 8) {
         firedRef.current.add(id);
         const label = PRAYER_META[item.key].label;
@@ -143,9 +154,16 @@ export default function IslamicPanel({
         // On Android the scheduled notification is what actually reaches the user;
         // the web Notification API is only used in a browser.
         if (!isNative()) {
-          notify(`${label} time`, `It is now ${formatMinutes(item.minutes, settings.use24Hour)} — time for ${label}.`);
+          notify(
+          `${label} ${item.reminderAt === "iqamah" ? "jamaat" : "time"}`,
+          `It is now ${formatMinutes(at, settings.use24Hour)} — ${
+            item.reminderAt === "iqamah" ? "jamaat for" : "time for"
+          } ${label}.`,
+        );
         }
-        setBanner(`🕌 ${label} — ${formatMinutes(item.minutes, settings.use24Hour)}`);
+        setBanner(
+          `🕌 ${label}${item.reminderAt === "iqamah" ? " jamaat" : ""} — ${formatMinutes(at, settings.use24Hour)}`,
+        );
         window.setTimeout(() => setBanner(null), 25000);
       }
     });
@@ -174,6 +192,8 @@ export default function IslamicPanel({
     setDraftStep(item.stepMinutes || 10);
     setDraftOffset(item.offsetMinutes);
     setDraftTime(formatClock(item.minutes));
+    setDraftIqamah(normalizeIqamah(item.iqamahRule));
+    setDraftReminderAt(item.reminderAt);
   };
 
   /** Switching mode re-projects the visible time, so the editor stays WYSIWYG. */
@@ -212,6 +232,17 @@ export default function IslamicPanel({
     );
   };
 
+  /** Azan minute the editor is currently previewing (jamaat section needs it). */
+  const draftAzan = (item: ScheduleItem): number => {
+    if (draftMode === "fixedClock") return parseClock(draftTime) ?? item.minutes;
+    return projectMinutes(item.astroMinutes, {
+      mode: draftMode,
+      offsetMin: draftOffset,
+      stepMin: draftStep,
+      fixedClock: null,
+    });
+  };
+
   const prefFromItem = (
     item: ScheduleItem,
     patch: Partial<PrayerPref> = {},
@@ -226,6 +257,8 @@ export default function IslamicPanel({
       customTime: existing?.customTime ?? null,
       calibratedAt: item.rule.calibratedAt,
       reminderEnabled: item.reminder,
+      iqamah: item.iqamahRule,
+      reminderAt: item.reminderAt,
       ...patch,
     };
   };
@@ -244,6 +277,8 @@ export default function IslamicPanel({
         customTime: null,
         calibratedAt: null,
         reminderEnabled: item.reminder,
+        iqamah: normalizeIqamah(draftIqamah),
+        reminderAt: draftReminderAt,
         reset: true,
       });
       setEditing(null);
@@ -262,6 +297,8 @@ export default function IslamicPanel({
         customTime: existing?.customTime ?? null,
         calibratedAt: calibratedToday,
         reminderEnabled: item.reminder,
+        iqamah: normalizeIqamah(draftIqamah),
+        reminderAt: draftReminderAt,
       });
       setEditing(null);
       return;
@@ -302,6 +339,8 @@ export default function IslamicPanel({
         ? calibratedToday
         : item.rule.calibratedAt ?? calibratedToday,
       reminderEnabled: item.reminder,
+      iqamah: normalizeIqamah(draftIqamah),
+      reminderAt: draftReminderAt,
       recalibrate: retyped,
     });
     setEditing(null);
@@ -440,8 +479,18 @@ export default function IslamicPanel({
                         {meta.bangla}
                       </div>
                     </div>
-                    <span className="text-base font-bold tabular-nums">
-                      {formatMinutes(item.minutes, settings.use24Hour)}
+                    <span className="text-right">
+                      <span className="block text-base font-bold tabular-nums">
+                        {formatMinutes(item.minutes, settings.use24Hour)}
+                      </span>
+                      {item.iqamahMinutes !== null ? (
+                        <span
+                          className="block text-[10px] tabular-nums"
+                          style={{ color: "var(--muted)" }}
+                        >
+                          jamaat {formatMinutes(item.iqamahMinutes, settings.use24Hour)}
+                        </span>
+                      ) : null}
                     </span>
                     {meta.isPrayer ? (
                       <>
@@ -579,6 +628,226 @@ export default function IslamicPanel({
                           ))}
                         </div>
                       ) : null}
+
+                      <div
+                        className="mt-3 rounded-xl border p-2.5"
+                        style={{ borderColor: "var(--panel-border)", background: "rgba(255,255,255,0.03)" }}
+                      >
+                        <div className="flex flex-wrap items-baseline justify-between gap-1">
+                          <span className="text-[11px] font-semibold">Jamaat (congregation)</span>
+                          <span className="text-[10px]" style={{ color: "var(--muted)" }}>
+                            mosque policy · never changes the azan
+                          </span>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          {IQAMAH_MODES.map((m) => (
+                            <Touchable
+                              key={m.id}
+                              onClick={() =>
+                                setDraftIqamah((rule) => normalizeIqamah({ ...rule, mode: m.id }))
+                              }
+                              className="rounded-lg border px-2 py-1 text-[10px] font-semibold"
+                              style={{
+                                borderColor: "var(--panel-border)",
+                                background:
+                                  draftIqamah.mode === m.id
+                                    ? "var(--accent)"
+                                    : "rgba(255,255,255,0.07)",
+                                color: draftIqamah.mode === m.id ? "#0b1020" : "var(--fg)",
+                              }}
+                            >
+                              {m.label}
+                            </Touchable>
+                          ))}
+                        </div>
+                        <p className="mt-1 text-[10px]" style={{ color: "var(--muted)" }}>
+                          {IQAMAH_MODES.find((m) => m.id === draftIqamah.mode)?.hint}
+                        </p>
+
+                        {draftIqamah.mode === "delay" ? (
+                          <div className="mt-1.5 flex items-center gap-1.5 text-[11px]">
+                            <span style={{ color: "var(--muted)" }}>Jamaat is</span>
+                            <Touchable
+                              onClick={() =>
+                                setDraftIqamah((rule) =>
+                                  normalizeIqamah({ ...rule, delayMin: Math.max(0, rule.delayMin - 5) }),
+                                )
+                              }
+                              className="rounded-lg border px-2 py-0.5 font-bold"
+                              style={{ borderColor: "var(--panel-border)" }}
+                              aria-label="Five minutes earlier"
+                            >
+                              −5
+                            </Touchable>
+                            <span className="min-w-[52px] text-center font-semibold tabular-nums">
+                              {draftIqamah.delayMin} min
+                            </span>
+                            <Touchable
+                              onClick={() =>
+                                setDraftIqamah((rule) =>
+                                  normalizeIqamah({ ...rule, delayMin: rule.delayMin + 5 }),
+                                )
+                              }
+                              className="rounded-lg border px-2 py-0.5 font-bold"
+                              style={{ borderColor: "var(--panel-border)" }}
+                              aria-label="Five minutes later"
+                            >
+                              +5
+                            </Touchable>
+                            <span style={{ color: "var(--muted)" }}>after the azan</span>
+                          </div>
+                        ) : null}
+
+                        {draftIqamah.mode === "clock" ? (
+                          <label className="mt-1.5 block text-[11px]">
+                            <span style={{ color: "var(--muted)" }}>Jamaat clock time (same every day)</span>
+                            <input
+                              type="time"
+                              value={draftIqamah.clock ?? ""}
+                              onChange={(e) =>
+                                setDraftIqamah((rule) =>
+                                  normalizeIqamah({ ...rule, clock: e.target.value || null }),
+                                )
+                              }
+                              className="mt-1 w-full rounded-xl border bg-white/10 px-3 py-2 text-sm"
+                              style={{ borderColor: "var(--panel-border)" }}
+                            />
+                          </label>
+                        ) : null}
+
+                        {draftIqamah.mode === "table" ? (
+                          <div className="mt-1.5 space-y-1.5">
+                            <p className="text-[10px] leading-relaxed" style={{ color: "var(--muted)" }}>
+                              Copy the dates from the mosque board. The newest entry on or before a
+                              date applies; before the first entry the earliest one does.
+                            </p>
+                            {draftIqamah.table.length === 0 ? (
+                              <p className="text-[10px]" style={{ color: "var(--muted)" }}>
+                                No entries yet — add the mosque&apos;s current jamaat time to start.
+                              </p>
+                            ) : null}
+                            {draftIqamah.table.map((row, index) => (
+                              <div key={`${row.from}-${index}`} className="flex items-center gap-1.5">
+                                <input
+                                  type="date"
+                                  value={row.from}
+                                  onChange={(e) =>
+                                    setDraftIqamah((rule) => ({
+                                      ...rule,
+                                      table: rule.table.map((entry, i) =>
+                                        i === index ? { ...entry, from: e.target.value } : entry,
+                                      ),
+                                    }))
+                                  }
+                                  className="min-w-0 flex-1 rounded-lg border bg-white/10 px-2 py-1 text-[11px]"
+                                  style={{ borderColor: "var(--panel-border)" }}
+                                  aria-label={`Effective date of jamaat entry ${index + 1}`}
+                                />
+                                <input
+                                  type="time"
+                                  value={row.clock ?? ""}
+                                  onChange={(e) =>
+                                    setDraftIqamah((rule) => ({
+                                      ...rule,
+                                      table: rule.table.map((entry, i) =>
+                                        i === index
+                                          ? {
+                                              ...entry,
+                                              clock: e.target.value || null,
+                                              delayMin: e.target.value ? null : entry.delayMin,
+                                            }
+                                          : entry,
+                                      ),
+                                    }))
+                                  }
+                                  className="w-[104px] rounded-lg border bg-white/10 px-2 py-1 text-[11px]"
+                                  style={{ borderColor: "var(--panel-border)" }}
+                                  aria-label={`Jamaat time from entry ${index + 1}`}
+                                />
+                                <Touchable
+                                  onClick={() =>
+                                    setDraftIqamah((rule) => ({
+                                      ...rule,
+                                      table: rule.table.filter((_, i) => i !== index),
+                                    }))
+                                  }
+                                  className="rounded-lg border px-2 py-1 text-[11px]"
+                                  style={{ borderColor: "var(--panel-border)" }}
+                                  aria-label={`Remove jamaat entry ${index + 1}`}
+                                >
+                                  ✕
+                                </Touchable>
+                              </div>
+                            ))}
+                            <Touchable
+                              onClick={() =>
+                                setDraftIqamah((rule) =>
+                                  normalizeIqamah({
+                                    ...rule,
+                                    table: [
+                                      ...rule.table,
+                                      {
+                                        from: dateKey(now),
+                                        clock: formatClock(item.iqamahMinutes ?? item.minutes),
+                                      },
+                                    ],
+                                  }),
+                                )
+                              }
+                              className="rounded-lg border px-2 py-1 text-[10px] font-semibold"
+                              style={{ borderColor: "var(--panel-border)" }}
+                            >
+                              + Add date
+                            </Touchable>
+                          </div>
+                        ) : null}
+
+                        {(() => {
+                          const preview = resolveIqamah(
+                            draftAzan(item),
+                            normalizeIqamah(draftIqamah),
+                            today,
+                          );
+                          const azanNow = draftAzan(item);
+                          return (
+                            <div className="mt-1.5 text-[10px] leading-relaxed" style={{ color: "var(--muted)" }}>
+                              {preview ? (
+                                <>
+                                  azan {formatClock(azanNow)} · {describeIqamah(draftIqamah, preview)} →{" "}
+                                  <strong style={{ color: "var(--fg)" }}>
+                                    jamaat {formatClock(preview.minutes)}
+                                  </strong>
+                                </>
+                              ) : (
+                                <>No jamaat time will be shown for this prayer.</>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {draftIqamah.mode !== "none" ? (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
+                            <span style={{ color: "var(--muted)" }}>Remind me at</span>
+                            {(["azan", "iqamah"] as const).map((target) => (
+                              <Touchable
+                                key={target}
+                                onClick={() => setDraftReminderAt(target)}
+                                className="rounded-lg border px-2 py-0.5 font-semibold"
+                                style={{
+                                  borderColor: "var(--panel-border)",
+                                  background:
+                                    draftReminderAt === target
+                                      ? "var(--accent)"
+                                      : "rgba(255,255,255,0.07)",
+                                  color: draftReminderAt === target ? "#0b1020" : "var(--fg)",
+                                }}
+                              >
+                                {target === "azan" ? "Azan" : "Jamaat"}
+                              </Touchable>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
 
                       <div className="mt-2 flex gap-2">
                         <Touchable
@@ -727,6 +996,52 @@ export default function IslamicPanel({
             </div>
           </Field>
 
+          <Field label="Elevation (metres, optional)">
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={4000}
+              step={10}
+              value={settings.elevationMeters}
+              onChange={(e) =>
+                onSettings({ elevationMeters: Math.max(0, Number(e.target.value) || 0) })
+              }
+              className="w-full rounded-xl border bg-white/10 px-3 py-2 text-sm"
+              style={{ borderColor: "var(--panel-border)" }}
+              aria-label="Elevation above sea level in metres"
+            />
+            <p className="mt-1 text-[10px]" style={{ color: "var(--muted)" }}>
+              Raises the apparent horizon for sunrise and sunset — worth a few minutes in hill
+              towns, no effect at sea level.
+            </p>
+          </Field>
+
+          <Field label="High-latitude twilight rule">
+            <div className="flex flex-wrap gap-1.5">
+              {HIGH_LATITUDE_CHOICES.map((choice) => (
+                <Touchable
+                  key={choice.id}
+                  onClick={() => onSettings({ highLatitudeRule: choice.id })}
+                  className="rounded-lg border px-2 py-1 text-[11px] font-semibold"
+                  style={{
+                    borderColor: "var(--panel-border)",
+                    background:
+                      settings.highLatitudeRule === choice.id
+                        ? "var(--accent)"
+                        : "rgba(255,255,255,0.07)",
+                    color: settings.highLatitudeRule === choice.id ? "#0b1020" : "var(--fg)",
+                  }}
+                >
+                  {choice.label}
+                </Touchable>
+              ))}
+            </div>
+            <p className="mt-1 text-[10px]" style={{ color: "var(--muted)" }}>
+              {HIGH_LATITUDE_CHOICES.find((c) => c.id === settings.highLatitudeRule)?.hint}
+            </p>
+          </Field>
+
           <Field label="Reminder alert">
             <div className="flex items-center justify-between rounded-xl border px-3 py-2" style={{ borderColor: "var(--panel-border)" }}>
               <span className="text-xs">Vibration + sound at prayer time</span>
@@ -799,10 +1114,15 @@ export default function IslamicPanel({
             </div>
           </div>
           <p className="text-[11px] leading-relaxed" style={{ color: "var(--muted)" }}>
-            Tapping ✎ on a prayer offers three tracking modes: <strong>auto</strong> (sun + your
-            offset), <strong>mosque steps</strong> (clean 5/10/15 minute Iqamah board) and{" "}
-            <strong>fixed clock</strong> (Jumu&apos;ah pinned regardless of season). ±1 nudges your
-            saved offset without recalibrating.
+            Tapping ✎ on a prayer separates two different things. <strong>Azan (prayer begins)</strong>{" "}
+            offers three tracking modes: <strong>auto</strong> (sun + your offset),{" "}
+            <strong>mosque steps</strong> (clean 5/10/15 minute board) and <strong>fixed clock</strong>{" "}
+            (Jumu&apos;ah pinned regardless of season); ±1 nudges your saved offset without
+            recalibrating. <strong>Jamaat (congregation)</strong> is the mosque&apos;s own policy and is
+            stored separately, so correcting it never moves the azan: a constant delay after the azan,
+            a fixed clock time, or a <strong>seasonal table</strong> of dated entries copied from the
+            mosque board. A single entered jamaat time is treated as a fixed clock — it is never
+            stretched into a yearly pattern.
           </p>
         </div>
       ) : null}

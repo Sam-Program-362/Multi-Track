@@ -130,6 +130,8 @@ export default function Dashboard({
         customTime: patch.customTime,
         calibratedAt: patch.calibratedAt,
         reminderEnabled: patch.reminderEnabled,
+        iqamah: patch.iqamah,
+        reminderAt: patch.reminderAt,
       };
       setPrefs((prev) => {
         const rest = prev.filter((p) => p.prayerKey !== pref.prayerKey);
