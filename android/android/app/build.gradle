@@ -1,0 +1,127 @@
+apply plugin: 'com.android.application'
+
+/**
+ * Signing and versioning are driven entirely by environment variables so that
+ * the permanent release key never has to live in this repository.
+ *
+ *   KEYSTORE_BASE64  base64 of the release keystore (decoded to release.jks by CI)
+ *   KEYSTORE_FILE    optional override for the decoded keystore path
+ *   KEYSTORE_PASSWORD
+ *   KEY_ALIAS
+ *   KEY_PASSWORD
+ *   APK_VERSION_CODE integer, strictly increasing - GitHub's run number
+ *   APK_VERSION_NAME human readable version, the "version" field of package.json
+ *
+ * Debug builds need none of these; they use the standard debug key.
+ */
+// Prefix all locals with `env` so they cannot collide with the properties of
+// the same name that the android block and signingConfigs expose to Groovy.
+def envKeystoreFile = System.getenv('KEYSTORE_FILE') ?: "${rootDir}/release.jks"
+def envKeystoreBase64 = System.getenv('KEYSTORE_BASE64')
+def envStorePassword = System.getenv('KEYSTORE_PASSWORD')
+def envKeyAlias = System.getenv('KEY_ALIAS')
+def envKeyPassword = System.getenv('KEY_PASSWORD')
+def hasSigningSecrets = envKeystoreBase64 && envStorePassword && envKeyAlias && envKeyPassword
+
+// Named so they cannot collide with the `versionCode` / `versionName`
+// properties of the android block below, which shadow locals in Groovy.
+def apkVersionCode = System.getenv('APK_VERSION_CODE')
+def apkVersionName = System.getenv('APK_VERSION_NAME') ?: '1.0.0'
+
+android {
+    namespace = "com.samprogram.multitrack"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.samprogram.multitrack"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        // Android refuses to install a build whose versionCode is not higher
+        // than the installed one, so CI always supplies it.
+        versionCode Integer.parseInt(apkVersionCode ?: '1')
+        versionName apkVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        if (hasSigningSecrets) {
+            release {
+                storeFile file(envKeystoreFile)
+                storePassword envStorePassword
+                keyAlias envKeyAlias
+                keyPassword envKeyPassword
+                enableV1Signing true
+                enableV2Signing true
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasSigningSecrets) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
+
+/**
+ * Refuse to build a release APK without the permanent key. This is attached to
+ * the release lifecycle only, so `assembleDebug` keeps working when the signing
+ * secrets are missing.
+ */
+tasks.matching { it.name == 'preReleaseBuild' }.configureEach {
+    doFirst {
+        if (!hasSigningSecrets) {
+            throw new GradleException("""
+Missing Android release signing secrets.
+
+A release build is refused because it would be unsigned: Android could never
+update it later without the same key.
+
+Add these GitHub Actions secrets (Repo > Settings > Secrets and variables > Actions):
+  KEYSTORE_BASE64   base64 of multitrack-release.jks
+  KEYSTORE_PASSWORD password of the keystore
+  KEY_ALIAS         key alias (multitrack)
+  KEY_PASSWORD      password of the key
+  APK_VERSION_CODE  a number higher than the last build (this is the run number)
+  APK_VERSION_NAME  the version field of package.json
+
+For a quick unsigned test build use: ./gradlew assembleDebug
+""")
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
